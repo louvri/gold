@@ -1,8 +1,11 @@
 package cloud_redis
 
 import (
-	"github.com/gomodule/redigo/redis"
-	"strings"
+	"context"
+	"fmt"
+	"time"
+
+	goRedis "github.com/redis/go-redis/v9"
 )
 
 const (
@@ -26,18 +29,32 @@ const (
 		end`
 )
 
-func (cr *CloudRedis) Lock(name, secret string, ttl ...int64) (bool, error) {
-	conn := cr.Pool.Get()
-	defer func(conn redis.Conn) {
-		_ = conn.Close()
-	}(conn)
-
-	timeToLive := int64(cr.ttl)
-	if len(ttl) > 0 {
-		timeToLive = ttl[0]
+func (c *CloudRedis) Lock(ctx context.Context, name, secret string, ttl ...time.Duration) (bool, error) {
+	script := goRedis.NewScript(SessionLockScript)
+	resp, err := script.Run(ctx, c.client, []string{name}, []string{secret}).Int()
+	if err != nil {
+		return false, err
 	}
-	script := redis.NewScript(1, SessionLockScript)
-	resp, err := redis.Int(script.Do(conn, name, secret, timeToLive))
+	if resp == 0 {
+		return false, nil
+	}
+	if len(ttl) > 0 {
+		duration := c.client.Expire(ctx, name, ttl[0])
+		if duration.Err() != nil {
+			return false, fmt.Errorf("error host %s: %v", name, duration.Err())
+		}
+	} else {
+		duration := c.client.Expire(ctx, name, 0)
+		if duration.Err() != nil {
+			return false, fmt.Errorf("error host %s: %v", name, duration.Err())
+		}
+	}
+	return true, nil
+}
+
+func (c *CloudRedis) Unlock(ctx context.Context, name, secret string) (bool, error) {
+	script := goRedis.NewScript(SessionUnlockScript)
+	resp, err := script.Run(ctx, c.client, []string{name}, []string{secret}).Int()
 	if err != nil {
 		return false, err
 	}
@@ -47,33 +64,6 @@ func (cr *CloudRedis) Lock(name, secret string, ttl ...int64) (bool, error) {
 	return true, nil
 }
 
-func (cr *CloudRedis) Unlock(name, secret string) (bool, error) {
-	conn := cr.Pool.Get()
-	defer func(conn redis.Conn) {
-		_ = conn.Close()
-	}(conn)
-
-	script := redis.NewScript(1, SessionUnlockScript)
-	resp, err := redis.Int(script.Do(conn, name, secret))
-	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "closed pool") {
-			conn, err = cr.SingleDial()
-			defer func(conn redis.Conn) {
-				_ = conn.Close()
-			}(conn)
-			if err != nil {
-				return false, err
-			}
-			resp, err = redis.Int(script.Do(conn, name, secret))
-			if err != nil {
-				return false, err
-			}
-		} else {
-			return false, err
-		}
-	}
-	if resp == 0 {
-		return false, nil
-	}
-	return true, nil
+func (c *CloudRedis) Client() *goRedis.Client {
+	return c.client
 }
