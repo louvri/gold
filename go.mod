@@ -5,7 +5,7 @@ go 1.20
 require (
 	cloud.google.com/go/pubsub v1.32.0
 	cloud.google.com/go/storage v1.29.0
-	github.com/gomodule/redigo v1.8.9
+	github.com/redis/go-redis/v9 v9.5.1
 	google.golang.org/api v0.130.0
 )
 
