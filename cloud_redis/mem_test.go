@@ -1,38 +1,57 @@
 package cloud_redis
 
 import (
+	"context"
 	"fmt"
 	"testing"
+	"time"
 )
 
-var con CloudRedis
+var con Redis
 
 func init() {
 	host := "127.0.0.1"
 	port := "6379"
-	con = New(host, "", port, 30)
+	con, _ = New(host, "", port, 30*time.Millisecond)
 }
 
 func TestHSetData(t *testing.T) {
-	err := con.HSetData("test", "hello", []byte("world"))
+	err := con.HSetData(
+		context.Background(),
+		"test",
+		map[string]interface{}{
+			"hello": "world",
+		},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestHSetDataExpire(t *testing.T) {
-	err := con.HSetData("test", "willexpire", []byte("hahah"), 5) // in seconds
+	err := con.HSetData(
+		context.Background(),
+		"test",
+		map[string]interface{}{
+			"willexpire": "hahah",
+		}, 5*time.Second) // in seconds
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestHGet(t *testing.T) {
-	err := con.HSetData("test", "kaka", []byte("world"), 5)
+	err := con.HSetData(
+		context.Background(),
+		"test",
+		map[string]interface{}{
+			"kaka": "world",
+		},
+		5*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := con.HGetData("test", "kaka")
+	data, err := con.HGetData(context.Background(), "test", "kaka")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,15 +59,27 @@ func TestHGet(t *testing.T) {
 }
 
 func TestHGetAll(t *testing.T) {
-	err := con.HSetData("test", "kaka", []byte("world"), 5)
+	err := con.HSetData(
+		context.Background(),
+		"test",
+		map[string]interface{}{
+			"kaka": "world",
+		},
+		5*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = con.HSetData("test", "kaki", []byte("hello"), 5)
+	err = con.HSetData(
+		context.Background(),
+		"test",
+		map[string]interface{}{
+			"kaki": "hello",
+		},
+		5*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := con.HGetAllData("test")
+	data, err := con.HGetAllData(context.Background(), "test")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,17 +1,19 @@
 package cloud_pubsub
 
 import (
-	"cloud.google.com/go/pubsub"
 	"context"
 	"errors"
 	"log"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"cloud.google.com/go/pubsub"
 )
 
 func TestPublishMessage(t *testing.T) {
-	publisher := NewCloudPublisher("my-project", "my-topic", "")
+	tmp, _ := NewCloudPublisher("my-project", "my-topic", "")
+	publisher := tmp.(*CloudPublisher)
 	if publisher.TopicID == "" {
 		t.Fatal(errors.New("failed to initialize publisher"))
 	}
@@ -38,7 +40,8 @@ func TestPublishMessage(t *testing.T) {
 }
 
 func TestSubscription(t *testing.T) {
-	subscriber := NewCloudSubscriber("my-project", "my-subscription", "")
+	tmp, _ := NewCloudSubscriber("my-project", "my-subscription", "")
+	subscriber := tmp.(*CloudSubscriber)
 	if subscriber.SubscriptionID == "" {
 		t.Fatal(errors.New("failed to initialize subscriber"))
 	}
@@ -46,7 +49,7 @@ func TestSubscription(t *testing.T) {
 	defer cancel()
 
 	var received int32
-	err := subscriber.Subscription.Receive(ctx, func(_ context.Context, msg *pubsub.Message) {
+	err := subscriber.Receive(ctx, func(_ context.Context, msg *pubsub.Message) {
 		log.Printf("Got message: %q\n", string(msg.Data))
 		atomic.AddInt32(&received, 1)
 		msg.Ack()
