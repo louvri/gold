@@ -2,7 +2,6 @@ package cloud_redis
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	goRedis "github.com/redis/go-redis/v9"
@@ -30,31 +29,27 @@ const (
 )
 
 func (c *CloudRedis) Lock(ctx context.Context, name, secret string, ttl ...time.Duration) (bool, error) {
+	var response int
+	var err error
 	script := goRedis.NewScript(SessionLockScript)
-	resp, err := script.Run(ctx, c.client, []string{name}, []string{secret}).Int()
+	if len(ttl) > 0 {
+		response, err = script.Run(ctx, c.client, []string{name}, secret, ttl[0]).Int()
+	} else {
+		response, err = script.Run(ctx, c.client, []string{name}, secret, 24*time.Hour).Int()
+	}
+
 	if err != nil {
 		return false, err
 	}
-	if resp == 0 {
+	if response == 0 {
 		return false, nil
-	}
-	if len(ttl) > 0 {
-		duration := c.client.Expire(ctx, name, ttl[0])
-		if duration.Err() != nil {
-			return false, fmt.Errorf("error host %s: %v", name, duration.Err())
-		}
-	} else {
-		duration := c.client.Expire(ctx, name, 0)
-		if duration.Err() != nil {
-			return false, fmt.Errorf("error host %s: %v", name, duration.Err())
-		}
 	}
 	return true, nil
 }
 
 func (c *CloudRedis) Unlock(ctx context.Context, name, secret string) (bool, error) {
 	script := goRedis.NewScript(SessionUnlockScript)
-	resp, err := script.Run(ctx, c.client, []string{name}, []string{secret}).Int()
+	resp, err := script.Run(ctx, c.client, []string{name}, secret).Int()
 	if err != nil {
 		return false, err
 	}
