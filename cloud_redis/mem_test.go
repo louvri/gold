@@ -85,3 +85,19 @@ func TestHGetAll(t *testing.T) {
 	}
 	fmt.Println(data)
 }
+
+func TestLock(t *testing.T) {
+	if ok, err := con.Lock(context.Background(), "aesir", "1234", 24*time.Hour); err != nil {
+		t.Fatal(err)
+	} else if !ok {
+		t.Fatal("cannot get lock")
+	}
+}
+
+func TestUnlock(t *testing.T) {
+	if ok, err := con.Unlock(context.Background(), "aesir", "1234"); err != nil {
+		t.Fatal(err)
+	} else if !ok {
+		t.Fatal("cannot get lock")
+	}
+}
