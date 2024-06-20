@@ -2,6 +2,7 @@ package cloud_redis
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -90,12 +91,24 @@ func (c *CloudRedis) SetData(ctx context.Context, key string, value interface{},
 }
 
 func (c *CloudRedis) HSetData(ctx context.Context, key string, value ...interface{}) (err error) {
-	response := c.client.HSet(ctx, key, value)
+	if len(value) < 2 {
+		return errors.New("hset require group key")
+	}
+	params := value[0:2]
+	var ttl time.Duration
+	if len(value) == 3 {
+		var ok bool
+		ttl, ok = value[2].(time.Duration)
+		if !ok {
+			return errors.New("wrong format ttl")
+		}
+	}
+	response := c.client.HSet(ctx, key, params)
 	if response.Err() != nil {
 		return fmt.Errorf("error hset %s: %v", key, response.Err())
 	}
-	if c.ttl.Milliseconds() > 0 {
-		duration := c.client.Expire(ctx, key, c.ttl)
+	if ttl.Milliseconds() > 0 {
+		duration := c.client.Expire(ctx, key, ttl)
 		if duration.Err() != nil {
 			return fmt.Errorf("error host %s: %v", key, duration.Err())
 		}

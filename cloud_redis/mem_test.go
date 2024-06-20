@@ -31,7 +31,8 @@ func TestHSetDataExpire(t *testing.T) {
 	err := con.HSetData(
 		context.Background(),
 		"test",
-		"willexpire", "hahah") // in seconds
+		"willexpire", "hahah",
+		1*time.Second) // in seconds
 	if err != nil {
 		t.Fatal(err)
 	}
