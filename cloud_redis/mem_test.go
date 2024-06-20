@@ -19,9 +19,8 @@ func TestHSetData(t *testing.T) {
 	err := con.HSetData(
 		context.Background(),
 		"test",
-		map[string]interface{}{
-			"hello": "world",
-		},
+		"hello",
+		"world",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -32,9 +31,7 @@ func TestHSetDataExpire(t *testing.T) {
 	err := con.HSetData(
 		context.Background(),
 		"test",
-		map[string]interface{}{
-			"willexpire": "hahah",
-		}, 5*time.Second) // in seconds
+		"willexpire", "hahah") // in seconds
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,10 +41,7 @@ func TestHGet(t *testing.T) {
 	err := con.HSetData(
 		context.Background(),
 		"test",
-		map[string]interface{}{
-			"kaka": "world",
-		},
-		5*time.Second)
+		"kaka", "world")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,20 +56,14 @@ func TestHGetAll(t *testing.T) {
 	err := con.HSetData(
 		context.Background(),
 		"test",
-		map[string]interface{}{
-			"kaka": "world",
-		},
-		5*time.Second)
+		"kaka", "world")
 	if err != nil {
 		t.Fatal(err)
 	}
 	err = con.HSetData(
 		context.Background(),
 		"test",
-		map[string]interface{}{
-			"kaki": "hello",
-		},
-		5*time.Second)
+		"kaki", "hello")
 	if err != nil {
 		t.Fatal(err)
 	}

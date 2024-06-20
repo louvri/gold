@@ -16,7 +16,7 @@ type Redis interface {
 	HGetAllData(ctx context.Context, key string) (map[string]string, error)
 	HGetData(ctx context.Context, key, field string) (string, error)
 	SetData(ctx context.Context, key string, value interface{}, ttl ...time.Duration) (err error)
-	HSetData(ctx context.Context, key string, value interface{}, ttl ...time.Duration) (err error)
+	HSetData(ctx context.Context, key string, value ...interface{}) (err error)
 	Exists(ctx context.Context, key ...string) (bool, error)
 	Delete(ctx context.Context, key ...string) error
 	HDelete(ctx context.Context, key string, value ...string) error
@@ -89,13 +89,13 @@ func (c *CloudRedis) SetData(ctx context.Context, key string, value interface{},
 	return nil
 }
 
-func (c *CloudRedis) HSetData(ctx context.Context, key string, value interface{}, ttl ...time.Duration) (err error) {
+func (c *CloudRedis) HSetData(ctx context.Context, key string, value ...interface{}) (err error) {
 	response := c.client.HSet(ctx, key, value)
 	if response.Err() != nil {
 		return fmt.Errorf("error hset %s: %v", key, response.Err())
 	}
-	if len(ttl) > 0 {
-		duration := c.client.Expire(ctx, key, ttl[0])
+	if c.ttl.Milliseconds() > 0 {
+		duration := c.client.Expire(ctx, key, c.ttl)
 		if duration.Err() != nil {
 			return fmt.Errorf("error host %s: %v", key, duration.Err())
 		}
