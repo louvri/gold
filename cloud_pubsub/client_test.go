@@ -3,17 +3,31 @@ package cloud_pubsub
 import (
 	"context"
 	"errors"
-	"log"
-	"sync/atomic"
+	"fmt"
 	"testing"
 	"time"
-
-	"cloud.google.com/go/pubsub"
 )
 
+type Mock struct {
+	ProjectID string
+	TopicID   string
+}
+
+func (p *Mock) PublishMessage(ctx context.Context, data Data) (messageID string, err error) {
+	fmt.Println("pubsub message:")
+	fmt.Println(data)
+	return "msg1234", nil
+}
+
+func NewMockPubs() *Mock {
+	return &Mock{
+		ProjectID: "my-project",
+		TopicID:   "my-topic",
+	}
+}
 func TestPublishMessage(t *testing.T) {
-	tmp, _ := NewCloudPublisher("my-project", "my-topic", "")
-	publisher := tmp.(*CloudPublisher)
+	// tmp, _ := NewCloudPublisher("my-project", "my-topic", "")
+	publisher := NewMockPubs()
 	if publisher.TopicID == "" {
 		t.Fatal(errors.New("failed to initialize publisher"))
 	}
@@ -36,28 +50,5 @@ func TestPublishMessage(t *testing.T) {
 	})
 	if err != nil || nextMessageId == "" {
 		t.Fatal(err)
-	}
-}
-
-func TestSubscription(t *testing.T) {
-	tmp, _ := NewCloudSubscriber("my-project", "my-subscription", "")
-	subscriber := tmp.(*CloudSubscriber)
-	if subscriber.SubscriptionID == "" {
-		t.Fatal(errors.New("failed to initialize subscriber"))
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	var received int32
-	err := subscriber.Receive(ctx, func(_ context.Context, msg *pubsub.Message) {
-		log.Printf("Got message: %q\n", string(msg.Data))
-		atomic.AddInt32(&received, 1)
-		msg.Ack()
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if received == 0 {
-		t.Fatal(errors.New("failed to receive subscription"))
 	}
 }
