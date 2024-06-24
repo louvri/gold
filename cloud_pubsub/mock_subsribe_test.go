@@ -56,7 +56,7 @@ func NewTestSubs(subs Subscriber) *testSubscriber {
 	}
 }
 
-func TestSubscription(t *testing.T) {
+func TestMockSubscription(t *testing.T) {
 	subs := NewMock()
 	r := NewTestSubs(subs)
 	err := r.ListenAndServe()
