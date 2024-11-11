@@ -80,6 +80,8 @@ func TestLock(t *testing.T) {
 		t.Fatal(err)
 	} else if !ok {
 		t.Fatal("cannot get lock")
+	} else {
+		t.Log(ok)
 	}
 }
 
