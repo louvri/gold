@@ -44,12 +44,17 @@ func (c *CloudRedis) Lock(ctx context.Context, name, secret string, ttl ...time.
 
 	if response, ok = tmp.(int); !ok {
 		if integer64, ok := tmp.(int64); !ok {
-			if str, ok := tmp.(string); ok {
-				response, err = strconv.Atoi(str)
-				if err != nil {
-					return false, err
+			if floater64, ok := tmp.(float64); !ok {
+				if str, ok := tmp.(string); ok {
+					response, err = strconv.Atoi(str)
+					if err != nil {
+						return false, err
+					}
 				}
+			} else {
+				response = int(floater64)
 			}
+
 		} else {
 			response = int(integer64)
 		}
@@ -76,12 +81,17 @@ func (c *CloudRedis) Unlock(ctx context.Context, name, secret string) (bool, err
 
 	if response, ok = tmp.(int); !ok {
 		if integer64, ok := tmp.(int64); !ok {
-			if str, ok := tmp.(string); ok {
-				response, err = strconv.Atoi(str)
-				if err != nil {
-					return false, err
+			if floater64, ok := tmp.(float64); !ok {
+				if str, ok := tmp.(string); ok {
+					response, err = strconv.Atoi(str)
+					if err != nil {
+						return false, err
+					}
 				}
+			} else {
+				response = int(floater64)
 			}
+
 		} else {
 			response = int(integer64)
 		}
