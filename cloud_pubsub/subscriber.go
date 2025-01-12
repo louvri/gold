@@ -34,6 +34,30 @@ func NewCloudSubscriber(projectID, subscriptionID, credentialsJSON string) (Subs
 	}, nil
 }
 
+func NewCloudSubscriberWithLimit(projectID, subscriptionID, credentialsJSON string, maxOutstandingMessages, numGoroutines int) (Subscriber, error) {
+	ctx := context.Background()
+	var client *pubsub.Client
+	var err error
+	if credentialsJSON != "" {
+		client, err = pubsub.NewClient(ctx, projectID, option.WithCredentialsJSON([]byte(credentialsJSON)))
+	} else {
+		client, err = pubsub.NewClient(ctx, projectID)
+	}
+	if err != nil {
+		log.Printf("subscriber.NewClient err: %v\n", err)
+		return nil, err
+	}
+	cleanUpCloudClient(client)
+	subscription := client.Subscription(subscriptionID)
+	subscription.ReceiveSettings.MaxOutstandingMessages = maxOutstandingMessages
+	subscription.ReceiveSettings.NumGoroutines = numGoroutines
+	return &CloudSubscriber{
+		ProjectID:      projectID,
+		SubscriptionID: subscriptionID,
+		Subscription:   subscription,
+	}, nil
+}
+
 type CloudSubscriber struct {
 	ProjectID      string
 	SubscriptionID string
