@@ -16,7 +16,7 @@ var (
 )
 
 // WithRetryableDistributedLock executes a function while holding a distributed lock with retry mechanism
-func (c *CloudRedis) WithRetryableDistributedLock(ctx context.Context, key string, fn func() error, timeout, retryPeriod time.Duration, ttl ...time.Duration) error {
+func (c *CloudRedis) WithRetryableDistributedLock(ctx context.Context, key string, fn func() (interface{}, error), timeout, retryPeriod time.Duration, ttl ...time.Duration) (interface{}, error) {
 	lockTTL := 5 * time.Second
 	if len(ttl) > 0 {
 		lockTTL = ttl[0]
@@ -27,7 +27,7 @@ func (c *CloudRedis) WithRetryableDistributedLock(ctx context.Context, key strin
 
 	err := c.acquireLockWithRetries(ctx, lockKey, lockValue, lockTTL, timeout, retryPeriod)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	defer func(tmpLockKey, tmpLockValue string) {
@@ -40,7 +40,7 @@ func (c *CloudRedis) WithRetryableDistributedLock(ctx context.Context, key strin
 }
 
 // WithDistributedLock executes a function while holding a distributed lock
-func (c *CloudRedis) WithDistributedLock(ctx context.Context, key string, fn func() error, ttl ...time.Duration) error {
+func (c *CloudRedis) WithDistributedLock(ctx context.Context, key string, fn func() (interface{}, error), ttl ...time.Duration) (interface{}, error) {
 	lockTTL := 5 * time.Second
 	if len(ttl) > 0 {
 		lockTTL = ttl[0]
@@ -51,7 +51,7 @@ func (c *CloudRedis) WithDistributedLock(ctx context.Context, key string, fn fun
 
 	err := c.acquireDistributedLock(ctx, lockKey, lockValue, lockTTL)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	defer func(tmpLockKey, tmpLockValue string) {
