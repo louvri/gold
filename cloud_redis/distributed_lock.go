@@ -16,7 +16,7 @@ var (
 )
 
 // WithRetryableDistributedLock executes a function while holding a distributed lock with retry mechanism
-func (c *CloudRedis) WithRetryableDistributedLock(ctx context.Context, key string, fn func() error, timeout time.Duration, ttl ...time.Duration) error {
+func (c *CloudRedis) WithRetryableDistributedLock(ctx context.Context, key string, fn func() error, timeout, retryPeriod time.Duration, ttl ...time.Duration) error {
 	lockTTL := 5 * time.Second
 	if len(ttl) > 0 {
 		lockTTL = ttl[0]
@@ -25,16 +25,16 @@ func (c *CloudRedis) WithRetryableDistributedLock(ctx context.Context, key strin
 	lockKey := fmt.Sprintf("lock:%s", key)
 	lockValue := generateUniqueValue()
 
-	err := c.acquireLockWithRetries(ctx, lockKey, lockValue, lockTTL, timeout)
+	err := c.acquireLockWithRetries(ctx, lockKey, lockValue, lockTTL, timeout, retryPeriod)
 	if err != nil {
 		return err
 	}
 
-	defer func() {
-		if unlockErr := c.releaseDistributedLock(context.Background(), lockKey, lockValue); unlockErr != nil {
-			log.Printf("Failed to release lock %s: %v", key, unlockErr)
+	defer func(tmpLockKey, tmpLockValue string) {
+		if releaseErr := c.releaseDistributedLock(context.Background(), tmpLockKey, tmpLockValue); releaseErr != nil {
+			log.Println("WithRetryableDistributedLock", "releaseDistributedLock", tmpLockKey, "error", releaseErr)
 		}
-	}()
+	}(lockKey, lockValue)
 
 	return fn()
 }
@@ -64,7 +64,7 @@ func (c *CloudRedis) WithDistributedLock(ctx context.Context, key string, fn fun
 }
 
 // acquireLockWithRetries attempts to acquire the lock with retry mechanism
-func (c *CloudRedis) acquireLockWithRetries(ctx context.Context, key, value string, ttl, timeout time.Duration) error {
+func (c *CloudRedis) acquireLockWithRetries(ctx context.Context, key, value string, ttl, timeout, retryPeriod time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -72,7 +72,7 @@ func (c *CloudRedis) acquireLockWithRetries(ctx context.Context, key, value stri
 		return err
 	}
 
-	ticker := time.NewTicker(50 * time.Millisecond)
+	ticker := time.NewTicker(retryPeriod)
 	defer ticker.Stop()
 
 	for {
@@ -91,7 +91,7 @@ func (c *CloudRedis) acquireLockWithRetries(ctx context.Context, key, value stri
 func (c *CloudRedis) acquireDistributedLock(ctx context.Context, key, value string, ttl time.Duration) error {
 	result, err := c.client.SetNX(ctx, key, value, ttl).Result()
 	if err != nil {
-		return fmt.Errorf("failed to acquire lock: %w", err)
+		log.Println("acquireDistributedLock", key, value, "error", err)
 	}
 	if !result {
 		return ErrDistributedLockNotAcquired
@@ -111,7 +111,7 @@ func (c *CloudRedis) releaseDistributedLock(ctx context.Context, key, value stri
 
 	result, err := c.client.Eval(ctx, script, []string{key}, value).Result()
 	if err != nil {
-		return fmt.Errorf("failed to release lock: %w", err)
+		log.Println("releaseDistributedLock", key, value, "error", err)
 	}
 
 	if val, ok := result.(int64); ok && val == 0 {
