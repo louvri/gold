@@ -24,6 +24,8 @@ type Redis interface {
 	Lock(ctx context.Context, name, secret string, ttl ...time.Duration) (bool, error)
 	Unlock(ctx context.Context, name, secret string) (bool, error)
 	Client() *goRedis.Client
+	WithRetryableDistributedLock(ctx context.Context, key string, fn func() error, timeout, retryPeriod time.Duration, ttl ...time.Duration) error
+	WithDistributedLock(ctx context.Context, key string, fn func() error, ttl ...time.Duration) error
 }
 
 func New(host, password string, port string, ttl time.Duration) (Redis, error) {
