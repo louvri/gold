@@ -1,14 +1,20 @@
 # gold
-<hr style="border:1px solid #444; margin-top: -0.5em;">  
 
-`gold` is a library that provides simple and common google cloud service actions.   
-Currently supports for [Google Cloud Storage](https://pkg.go.dev/cloud.google.com/go/storage), [Google Cloud PubSub](https://pkg.go.dev/cloud.google.com/go/pubsub), and Google Cloud MemoryStore with Redis.
+`gold` is a Go library that provides simple wrappers for common Google Cloud services.
 
-### Installation
-<hr style="border:1px solid #444; margin-top: -0.5em;">  
+Currently supports:
+- [Cloud PubSub](pubsub/) — publish and subscribe to topics
+- [Cloud Memorystore (Redis)](redis/) — caching, locking, and distributed locks
+- [Cloud Storage](storage/) — upload, download, and manage objects
 
-Get the code with:
+## Installation
+
+Each service is a separate Go module. Install only what you need:
+
 ```
-$ go get github.com/louvri/gold
+go get github.com/louvri/gold/pubsub
+go get github.com/louvri/gold/redis
+go get github.com/louvri/gold/storage
 ```
-For usage please view on each directory README.
+
+See each module's README for usage details.
