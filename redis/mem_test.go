@@ -291,9 +291,9 @@ func TestScan(t *testing.T) {
 	ctx := context.Background()
 
 	for i := range 5 {
-		r.SetData(ctx, "scan:key:"+string(rune('a'+i)), "val")
+		_ = r.SetData(ctx, "scan:key:"+string(rune('a'+i)), "val")
 	}
-	r.SetData(ctx, "other:key", "val")
+	_ = r.SetData(ctx, "other:key", "val")
 
 	keys, err := r.Scan(ctx, "scan:*", 100)
 	if err != nil {
