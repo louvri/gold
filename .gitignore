@@ -19,6 +19,12 @@
 
 # Go workspace file
 go.work
-.idea
-.vscode
-.DS_STORE
+go.work.sum
+
+# IDE / editor files
+.idea/
+.vscode/
+.DS_Store
+
+# Claude Code
+.claude/

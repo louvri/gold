@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Tag Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get latest tag
+        id: latest_tag
+        run: |
+          tag=$(git tag --sort=-v:refname | head -n 1)
+          if [ -z "$tag" ]; then
+            echo "version=v0.0.0" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$tag" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump patch version
+        id: bump
+        run: |
+          version="${{ steps.latest_tag.outputs.version }}"
+          version="${version#v}"
+          IFS='.' read -r major minor patch <<< "$version"
+          patch=$((patch + 1))
+          new_version="v${major}.${minor}.${patch}"
+          echo "new_version=$new_version" >> "$GITHUB_OUTPUT"
+
+      - name: Create tag and release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git tag "${{ steps.bump.outputs.new_version }}"
+          git push origin "${{ steps.bump.outputs.new_version }}"
+          gh release create "${{ steps.bump.outputs.new_version }}" \
+            --generate-notes \
+            --title "${{ steps.bump.outputs.new_version }}"

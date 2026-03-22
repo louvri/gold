@@ -1,4 +1,4 @@
-package cloud_redis
+package redis
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 )
 
@@ -16,55 +15,57 @@ var (
 )
 
 // WithRetryableDistributedLock executes a function while holding a distributed lock with retry mechanism
-func (c *CloudRedis) WithRetryableDistributedLock(ctx context.Context, key string, fn func() (interface{}, error), timeout, retryPeriod time.Duration, ttl ...time.Duration) (interface{}, error) {
+func (c *redisClient) WithRetryableDistributedLock(ctx context.Context, key string, fn func() (any, error), timeout, retryPeriod time.Duration, ttl ...time.Duration) (any, error) {
 	lockTTL := 5 * time.Second
 	if len(ttl) > 0 {
 		lockTTL = ttl[0]
 	}
 
 	lockKey := fmt.Sprintf("lock:%s", key)
-	lockValue := generateUniqueValue()
-
-	err := c.acquireLockWithRetries(ctx, lockKey, lockValue, lockTTL, timeout, retryPeriod)
+	lockValue, err := generateUniqueValue()
 	if err != nil {
 		return nil, err
 	}
 
-	defer func(tmpLockKey, tmpLockValue string) {
-		if releaseErr := c.releaseDistributedLock(context.Background(), tmpLockKey, tmpLockValue); releaseErr != nil {
-			log.Println("WithRetryableDistributedLock", "releaseDistributedLock", tmpLockKey, "error", releaseErr)
-		}
-	}(lockKey, lockValue)
+	err = c.acquireLockWithRetries(ctx, lockKey, lockValue, lockTTL, timeout, retryPeriod)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		_ = c.releaseDistributedLock(context.Background(), lockKey, lockValue)
+	}()
 
 	return fn()
 }
 
 // WithDistributedLock executes a function while holding a distributed lock
-func (c *CloudRedis) WithDistributedLock(ctx context.Context, key string, fn func() (interface{}, error), ttl ...time.Duration) (interface{}, error) {
+func (c *redisClient) WithDistributedLock(ctx context.Context, key string, fn func() (any, error), ttl ...time.Duration) (any, error) {
 	lockTTL := 5 * time.Second
 	if len(ttl) > 0 {
 		lockTTL = ttl[0]
 	}
 
 	lockKey := fmt.Sprintf("lock:%s", key)
-	lockValue := generateUniqueValue()
-
-	err := c.acquireDistributedLock(ctx, lockKey, lockValue, lockTTL)
+	lockValue, err := generateUniqueValue()
 	if err != nil {
 		return nil, err
 	}
 
-	defer func(tmpLockKey, tmpLockValue string) {
-		if releaseErr := c.releaseDistributedLock(context.Background(), tmpLockKey, tmpLockValue); releaseErr != nil {
-			log.Println("WithDistributedLock", "releaseDistributedLock", tmpLockKey, "error", releaseErr)
-		}
-	}(lockKey, lockValue)
+	err = c.acquireDistributedLock(ctx, lockKey, lockValue, lockTTL)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		_ = c.releaseDistributedLock(context.Background(), lockKey, lockValue)
+	}()
 
 	return fn()
 }
 
 // acquireLockWithRetries attempts to acquire the lock with retry mechanism
-func (c *CloudRedis) acquireLockWithRetries(ctx context.Context, key, value string, ttl, timeout, retryPeriod time.Duration) error {
+func (c *redisClient) acquireLockWithRetries(ctx context.Context, key, value string, ttl, timeout, retryPeriod time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -88,10 +89,10 @@ func (c *CloudRedis) acquireLockWithRetries(ctx context.Context, key, value stri
 }
 
 // acquireDistributedLock attempts to acquire the distributed lock immediately (fail-fast)
-func (c *CloudRedis) acquireDistributedLock(ctx context.Context, key, value string, ttl time.Duration) error {
+func (c *redisClient) acquireDistributedLock(ctx context.Context, key, value string, ttl time.Duration) error {
 	result, err := c.client.SetNX(ctx, key, value, ttl).Result()
 	if err != nil {
-		log.Println("acquireDistributedLock", key, value, "error", err)
+		return fmt.Errorf("acquireDistributedLock %s: %w", key, err)
 	}
 	if !result {
 		return ErrDistributedLockNotAcquired
@@ -100,7 +101,7 @@ func (c *CloudRedis) acquireDistributedLock(ctx context.Context, key, value stri
 }
 
 // releaseDistributedLock releases the distributed lock
-func (c *CloudRedis) releaseDistributedLock(ctx context.Context, key, value string) error {
+func (c *redisClient) releaseDistributedLock(ctx context.Context, key, value string) error {
 	script := `
 		if redis.call("GET", KEYS[1]) == ARGV[1] then
 			return redis.call("DEL", KEYS[1])
@@ -111,7 +112,7 @@ func (c *CloudRedis) releaseDistributedLock(ctx context.Context, key, value stri
 
 	result, err := c.client.Eval(ctx, script, []string{key}, value).Result()
 	if err != nil {
-		log.Println("releaseDistributedLock", key, value, "error", err)
+		return fmt.Errorf("releaseDistributedLock %s: %w", key, err)
 	}
 
 	if val, ok := result.(int64); ok && val == 0 {
@@ -121,8 +122,10 @@ func (c *CloudRedis) releaseDistributedLock(ctx context.Context, key, value stri
 	return nil
 }
 
-func generateUniqueValue() string {
-	bytes := make([]byte, 16)
-	_, _ = rand.Read(bytes)
-	return hex.EncodeToString(bytes)
+func generateUniqueValue() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generateUniqueValue: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }
