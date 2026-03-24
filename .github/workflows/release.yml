@@ -16,32 +16,35 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get latest tag
-        id: latest_tag
-        run: |
-          tag=$(git tag --sort=-v:refname | head -n 1)
-          if [ -z "$tag" ]; then
-            echo "version=v0.0.0" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=$tag" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Bump patch version
-        id: bump
-        run: |
-          version="${{ steps.latest_tag.outputs.version }}"
-          version="${version#v}"
-          IFS='.' read -r major minor patch <<< "$version"
-          patch=$((patch + 1))
-          new_version="v${major}.${minor}.${patch}"
-          echo "new_version=$new_version" >> "$GITHUB_OUTPUT"
-
-      - name: Create tag and release
+      - name: Tag sub-modules
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git tag "${{ steps.bump.outputs.new_version }}"
-          git push origin "${{ steps.bump.outputs.new_version }}"
-          gh release create "${{ steps.bump.outputs.new_version }}" \
-            --generate-notes \
-            --title "${{ steps.bump.outputs.new_version }}"
+          for module in pubsub redis storage; do
+            # Get latest tag for this sub-module
+            latest=$(git tag --sort=-v:refname -l "${module}/v*" | head -n 1)
+            if [ -z "$latest" ]; then
+              latest="${module}/v0.0.0"
+            fi
+
+            # Check if sub-module has changes since its latest tag
+            changes=$(git diff --name-only "$latest"..HEAD -- "$module/" 2>/dev/null || echo "$module/")
+            if [ -z "$changes" ]; then
+              echo "No changes in $module since $latest, skipping"
+              continue
+            fi
+
+            # Bump patch version
+            version="${latest#${module}/v}"
+            IFS='.' read -r major minor patch <<< "$version"
+            patch=$((patch + 1))
+            new_tag="${module}/v${major}.${minor}.${patch}"
+
+            echo "Tagging $new_tag"
+            git tag "$new_tag"
+            git push origin "$new_tag"
+
+            gh release create "$new_tag" \
+              --generate-notes \
+              --title "$new_tag"
+          done
