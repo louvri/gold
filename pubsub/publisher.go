@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"cloud.google.com/go/pubsub"
+	"cloud.google.com/go/pubsub/v2"
 	"google.golang.org/api/option"
 )
 
@@ -27,7 +27,7 @@ func NewPublisher(projectID, topicID, credentialsJSON string) (Publisher, error)
 	ctx := context.Background()
 	var opts []option.ClientOption
 	if credentialsJSON != "" {
-		opts = append(opts, option.WithCredentialsJSON([]byte(credentialsJSON)))
+		opts = append(opts, option.WithAuthCredentialsJSON(option.ServiceAccount, []byte(credentialsJSON)))
 	}
 	client, err := pubsub.NewClient(ctx, projectID, opts...)
 	if err != nil {
@@ -37,6 +37,7 @@ func NewPublisher(projectID, topicID, credentialsJSON string) (Publisher, error)
 		projectID: projectID,
 		topicID:   topicID,
 		client:    client,
+		publisher: client.Publisher(topicID),
 	}, nil
 }
 
@@ -44,6 +45,7 @@ type cloudPublisher struct {
 	projectID string
 	topicID   string
 	client    *pubsub.Client
+	publisher *pubsub.Publisher
 }
 
 func (cp *cloudPublisher) PublishMessage(ctx context.Context, pubSubData Data) (string, error) {
@@ -55,8 +57,7 @@ func (cp *cloudPublisher) PublishMessageWithAttributes(ctx context.Context, pubS
 	if err != nil {
 		return "", fmt.Errorf("publisher.Marshal: %w", err)
 	}
-	topic := cp.client.Topic(cp.topicID)
-	result := topic.Publish(ctx, &pubsub.Message{
+	result := cp.publisher.Publish(ctx, &pubsub.Message{
 		Data:       byteData,
 		Attributes: attributes,
 	})
@@ -68,5 +69,6 @@ func (cp *cloudPublisher) PublishMessageWithAttributes(ctx context.Context, pubS
 }
 
 func (cp *cloudPublisher) Close() error {
+	cp.publisher.Stop()
 	return cp.client.Close()
 }

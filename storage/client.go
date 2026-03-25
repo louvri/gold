@@ -30,9 +30,9 @@ func New(credential, contentType, bucketName, customEndpoint string, expiryDurat
 		opts = append(opts, option.WithEndpoint(customEndpoint))
 	}
 	if _, err := os.Stat(credential); err != nil {
-		opts = append(opts, option.WithCredentialsJSON([]byte(credential)))
+		opts = append(opts, option.WithAuthCredentialsJSON(option.ServiceAccount, []byte(credential)))
 	} else {
-		opts = append(opts, option.WithCredentialsFile(credential))
+		opts = append(opts, option.WithAuthCredentialsFile(option.ServiceAccount, credential))
 	}
 
 	client, err := gcs.NewClient(context.Background(), opts...)
