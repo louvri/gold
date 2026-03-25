@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"cloud.google.com/go/pubsub"
+	"cloud.google.com/go/pubsub/v2"
 )
 
 type MockSubscriber struct {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"cloud.google.com/go/pubsub"
+	"cloud.google.com/go/pubsub/v2"
 	"google.golang.org/api/option"
 )
 
@@ -22,22 +22,22 @@ func NewSubscriber(projectID, subscriptionID, credentialsJSON string, opts ...Su
 	ctx := context.Background()
 	var clientOpts []option.ClientOption
 	if credentialsJSON != "" {
-		clientOpts = append(clientOpts, option.WithCredentialsJSON([]byte(credentialsJSON)))
+		clientOpts = append(clientOpts, option.WithAuthCredentialsJSON(option.ServiceAccount, []byte(credentialsJSON)))
 	}
 	client, err := pubsub.NewClient(ctx, projectID, clientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("subscriber.NewClient: %w", err)
 	}
-	subscription := client.Subscription(subscriptionID)
+	subscriber := client.Subscriber(subscriptionID)
 	if len(opts) > 0 {
-		subscription.ReceiveSettings.MaxOutstandingMessages = opts[0].MaxOutstandingMessages
-		subscription.ReceiveSettings.NumGoroutines = opts[0].NumGoroutines
+		subscriber.ReceiveSettings.MaxOutstandingMessages = opts[0].MaxOutstandingMessages
+		subscriber.ReceiveSettings.NumGoroutines = opts[0].NumGoroutines
 	}
 	return &cloudSubscriber{
 		projectID:      projectID,
 		subscriptionID: subscriptionID,
 		client:         client,
-		subscription:   subscription,
+		subscriber:     subscriber,
 	}, nil
 }
 
@@ -54,11 +54,11 @@ type cloudSubscriber struct {
 	projectID      string
 	subscriptionID string
 	client         *pubsub.Client
-	subscription   *pubsub.Subscription
+	subscriber     *pubsub.Subscriber
 }
 
 func (s *cloudSubscriber) Receive(ctx context.Context, callback func(ctx context.Context, msg *pubsub.Message)) error {
-	return s.subscription.Receive(ctx, callback)
+	return s.subscriber.Receive(ctx, callback)
 }
 
 func (s *cloudSubscriber) Close() error {
