@@ -187,4 +187,3 @@ func (c *redisClient) Scan(ctx context.Context, pattern string, count int64) ([]
 	}
 	return keys, nil
 }
-
