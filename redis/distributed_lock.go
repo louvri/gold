@@ -26,9 +26,10 @@ var (
 
 // WithRetryableDistributedLock executes a function while holding a distributed lock with retry mechanism.
 func (c *redisClient) WithRetryableDistributedLock(ctx context.Context, key string, fn func() (any, error), timeout, retryPeriod time.Duration, ttl ...time.Duration) (any, error) {
+	// An expired timeout would never attempt the lock, even a free one, and
 	// time.NewTicker panics on a non-positive period.
-	if retryPeriod <= 0 {
-		return nil, fmt.Errorf("lock %s: retry period must be positive, got %s", key, retryPeriod)
+	if timeout <= 0 || retryPeriod <= 0 {
+		return nil, fmt.Errorf("%w: %s got timeout %s, retry period %s", ErrInvalidLockRetry, key, timeout, retryPeriod)
 	}
 	lockKey := "lock:" + key
 	d, err := lockTTL(key, 5*time.Second, ttl)

@@ -448,8 +448,29 @@ func TestRetryableDistributedLockRejectsNonPositiveRetryPeriod(t *testing.T) {
 		t.Fatalf("SetNX: got (%v, %v)", ok, err)
 	}
 	_, err := r.WithRetryableDistributedLock(ctx, "busy", func() (any, error) { return nil, nil }, time.Second, 0)
-	if err == nil {
-		t.Fatal("zero retry period: want an error")
+	if !errors.Is(err, ErrInvalidLockRetry) {
+		t.Fatalf("zero retry period: got %v, want ErrInvalidLockRetry", err)
+	}
+}
+
+func TestRetryableDistributedLockRejectsNonPositiveTimeout(t *testing.T) {
+	r, _ := setup(t)
+	ctx := context.Background()
+
+	// An already-expired timeout would never attempt the lock, even a free
+	// one, and fail with a context error the caller cannot tell from Redis.
+	called := false
+	for _, timeout := range []time.Duration{0, -time.Second} {
+		_, err := r.WithRetryableDistributedLock(ctx, "free", func() (any, error) {
+			called = true
+			return nil, nil
+		}, timeout, 10*time.Millisecond)
+		if !errors.Is(err, ErrInvalidLockRetry) {
+			t.Fatalf("timeout %s: got %v, want ErrInvalidLockRetry", timeout, err)
+		}
+	}
+	if called {
+		t.Fatal("fn ran despite an invalid timeout")
 	}
 }
 

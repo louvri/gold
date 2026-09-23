@@ -67,7 +67,7 @@ ok, err = client.Unlock(ctx, "resource", "my-secret")
 
 ### Distributed Lock
 
-Automatically acquires and releases a lock around a function call using a unique token. The TTL defaults to 5s and must be positive: a zero TTL used to store the lock without expiry, so a crashed holder kept it forever, and now returns `ErrInvalidLockTTL`. With retry, the retry period must be positive too.
+Automatically acquires and releases a lock around a function call using a unique token. The TTL defaults to 5s and must be positive: a zero TTL used to store the lock without expiry, so a crashed holder kept it forever, and now returns `ErrInvalidLockTTL`. With retry, the timeout and the retry period must be positive too, or it returns `ErrInvalidLockRetry`.
 
 ```go
 ctx := context.Background()

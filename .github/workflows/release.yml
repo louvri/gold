@@ -20,8 +20,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The branch does not require the pull-request checks, so a merge with red
+  # CI or a direct push would otherwise publish untested code, and a tag on
+  # the module proxy cannot be withdrawn. Every module is verified, not only
+  # the changed ones: any of them may be released below.
+  verify:
+    name: Verify (${{ matrix.module }}, go ${{ matrix.go }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module: [pubsub, redis, storage]
+        # "floor" reads the go directive from the module's go.mod.
+        go: [floor, "1.27.x"]
+    env:
+      GOTOOLCHAIN: local
+      GOWORK: "off"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go != 'floor' && matrix.go || '' }}
+          go-version-file: ${{ matrix.go == 'floor' && format('{0}/go.mod', matrix.module) || '' }}
+
+      - name: Build, vet and test
+        working-directory: ${{ matrix.module }}
+        run: |
+          go build ./...
+          go vet ./...
+          go test ./... -race -count=1
+
   release:
     name: Release (${{ matrix.module }})
+    needs: verify
     runs-on: ubuntu-latest
     strategy:
       # One module refusing to release (see next-version.sh) must not cancel
@@ -74,4 +105,6 @@ jobs:
           if [ -n "$BASE_TAG" ]; then
             notes_from=(--notes-start-tag "$BASE_TAG")
           fi
-          gh release create "$NEW_TAG" --target "$GITHUB_SHA" --generate-notes "${notes_from[@]}" --title "$NEW_TAG"
+          # The ${a[@]+...} form expands an empty array safely under `set -u`
+          # on bash before 4.4 as well.
+          gh release create "$NEW_TAG" --target "$GITHUB_SHA" --generate-notes ${notes_from[@]+"${notes_from[@]}"} --title "$NEW_TAG"

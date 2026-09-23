@@ -48,6 +48,10 @@ var ErrEmptyLockSecret = errors.New("lock secret must not be empty")
 // ErrInvalidLockTTL is returned for a non-positive lock TTL.
 var ErrInvalidLockTTL = errors.New("lock ttl must be positive")
 
+// ErrInvalidLockRetry is returned by WithRetryableDistributedLock for a
+// non-positive timeout or retry period.
+var ErrInvalidLockRetry = errors.New("lock retry timeout and period must be positive")
+
 // The scripts are built once: NewScript hashes the source for EVALSHA.
 var (
 	sessionLockScript   = goRedis.NewScript(SessionLockScript)
@@ -70,7 +74,7 @@ func lockTTL(name string, fallback time.Duration, ttl []time.Duration) (time.Dur
 
 func (c *redisClient) Lock(ctx context.Context, name, secret string, ttl ...time.Duration) (bool, error) {
 	if secret == "" {
-		return false, ErrEmptyLockSecret
+		return false, fmt.Errorf("%w: %s", ErrEmptyLockSecret, name)
 	}
 	d, err := lockTTL(name, 24*time.Hour, ttl)
 	if err != nil {
