@@ -11,44 +11,59 @@ on:
 permissions:
   contents: write
 
+# Each run derives its tags from the commits since the last ones, so two runs
+# must not compute from the same base. A running release is never cancelled;
+# a newer queued run supersedes an older queued one, and since versions are
+# computed from every commit since the last tag, it releases both pushes.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
-    name: Tag Release
+    name: Release (${{ matrix.module }})
     runs-on: ubuntu-latest
+    strategy:
+      # One module refusing to release (see next-version.sh) must not cancel
+      # another between pushing its tag and creating its release.
+      fail-fast: false
+      matrix:
+        module: [pubsub, redis, storage]
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Tag sub-modules
+      # The level comes from Release-As trailers and conventional-commit
+      # markers on the changes that touched this module; see
+      # .github/scripts/next-version.sh and its test for the rules.
+      - name: Determine next version
+        id: version
+        run: |
+          set -euo pipefail
+          base=$(.github/scripts/next-version.sh --base "${{ matrix.module }}")
+          next=$(.github/scripts/next-version.sh "${{ matrix.module }}")
+          echo "base=${base}" >> "$GITHUB_OUTPUT"
+          if [ "$next" = "skip" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "new_tag=${next}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Notes start from the tag the version was computed from, not from the
+      # newest release of any module.
+      - name: Create tag and release
+        if: steps.version.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_TAG: ${{ steps.version.outputs.new_tag }}
+          BASE_TAG: ${{ steps.version.outputs.base }}
         run: |
-          for module in pubsub redis storage; do
-            # Get latest tag for this sub-module
-            latest=$(git tag --sort=-v:refname -l "${module}/v*" | head -n 1)
-            if [ -z "$latest" ]; then
-              latest="${module}/v0.0.0"
-            fi
-
-            # Check if sub-module has changes since its latest tag
-            changes=$(git diff --name-only "$latest"..HEAD -- "$module/" 2>/dev/null || echo "$module/")
-            if [ -z "$changes" ]; then
-              echo "No changes in $module since $latest, skipping"
-              continue
-            fi
-
-            # Bump patch version
-            version="${latest#${module}/v}"
-            IFS='.' read -r major minor patch <<< "$version"
-            patch=$((patch + 1))
-            new_tag="${module}/v${major}.${minor}.${patch}"
-
-            echo "Tagging $new_tag"
-            git tag "$new_tag"
-            git push origin "$new_tag"
-
-            gh release create "$new_tag" \
-              --generate-notes \
-              --title "$new_tag"
-          done
+          set -euo pipefail
+          git tag "$NEW_TAG"
+          git push origin "$NEW_TAG"
+          notes_from=()
+          if [ -n "$BASE_TAG" ]; then
+            notes_from=(--notes-start-tag "$BASE_TAG")
+          fi
+          gh release create "$NEW_TAG" --generate-notes "${notes_from[@]}" --title "$NEW_TAG"

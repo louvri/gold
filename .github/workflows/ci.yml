@@ -7,6 +7,7 @@ on:
       - "pubsub/**"
       - "redis/**"
       - "storage/**"
+      - ".github/**"
 
 permissions:
   contents: read
@@ -18,7 +19,11 @@ jobs:
     outputs:
       modules: ${{ steps.changes.outputs.modules }}
     steps:
+      # Full history: a shallow checkout has no origin/main to diff against,
+      # which made every module count as changed.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Detect changed modules
         id: changes
@@ -49,27 +54,50 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25.0"
+          go-version: "1.27.x"
+          # govulncheck judges the stdlib by this toolchain, so use the newest
+          # patch rather than whatever the runner image has cached.
+          check-latest: true
 
+      # Tool versions are pinned: `latest` lets a tool release turn an
+      # unrelated PR red.
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
+          version: v2.13.2
           working-directory: ${{ matrix.module }}
+          args: --enable=modernize
+
+      # Fails only on vulnerabilities reachable from gold's code.
+      - name: govulncheck
+        working-directory: ${{ matrix.module }}
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+        env:
+          GOWORK: "off"
 
   build:
-    name: Build (${{ matrix.module }})
+    name: Build (${{ matrix.module }}, go ${{ matrix.go }})
     needs: detect-changes
     if: needs.detect-changes.outputs.modules != '[]'
     runs-on: ubuntu-latest
     strategy:
       matrix:
         module: ${{ fromJSON(needs.detect-changes.outputs.modules) }}
+        # "floor" reads the go directive from the module's go.mod, so the
+        # declared minimum is what gets tested; the other entry is the newest
+        # release.
+        go: [floor, "1.27.x"]
+    env:
+      # Fail rather than silently fetch a newer toolchain, so each job runs
+      # the Go version it is named for.
+      GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25.0"
+          go-version: ${{ matrix.go != 'floor' && matrix.go || '' }}
+          go-version-file: ${{ matrix.go == 'floor' && format('{0}/go.mod', matrix.module) || '' }}
 
       - name: Build
         working-directory: ${{ matrix.module }}
@@ -78,22 +106,43 @@ jobs:
           GOWORK: "off"
 
   test:
-    name: Test (${{ matrix.module }})
+    name: Test (${{ matrix.module }}, go ${{ matrix.go }})
     needs: detect-changes
     if: needs.detect-changes.outputs.modules != '[]'
     runs-on: ubuntu-latest
     strategy:
       matrix:
         module: ${{ fromJSON(needs.detect-changes.outputs.modules) }}
+        # "floor" reads the go directive from the module's go.mod, so the
+        # declared minimum is what gets tested; the other entry is the newest
+        # release.
+        go: [floor, "1.27.x"]
+    env:
+      # Fail rather than silently fetch a newer toolchain, so each job runs
+      # the Go version it is named for.
+      GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25.0"
+          go-version: ${{ matrix.go != 'floor' && matrix.go || '' }}
+          go-version-file: ${{ matrix.go == 'floor' && format('{0}/go.mod', matrix.module) || '' }}
 
       - name: Test
         working-directory: ${{ matrix.module }}
-        run: go test ./... -count=1
+        run: go test ./... -race -count=1
         env:
           GOWORK: "off"
+
+  release-script:
+    name: Release script
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shellcheck release scripts
+        run: shellcheck .github/scripts/*.sh
+
+      - name: Test release versioning
+        run: .github/scripts/next-version_test.sh
