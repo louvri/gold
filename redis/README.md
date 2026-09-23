@@ -8,6 +8,8 @@ Redis client wrapper with support for caching, session locking, and distributed 
 go get github.com/louvri/gold/redis
 ```
 
+Requires Go 1.25 or later.
+
 ## Usage
 
 ### Create Client

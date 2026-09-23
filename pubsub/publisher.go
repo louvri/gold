@@ -1,3 +1,5 @@
+// Package pubsub wraps Google Cloud Pub/Sub publishing and subscribing behind
+// small interfaces that are easy to replace with a mock in tests.
 package pubsub
 
 import (
@@ -9,6 +11,7 @@ import (
 	"google.golang.org/api/option"
 )
 
+// Data is the envelope every published message carries, encoded as JSON.
 type Data struct {
 	ID          string
 	Publisher   string
@@ -17,12 +20,18 @@ type Data struct {
 	Data        any
 }
 
+// Publisher publishes to one topic. Both publish methods block until the
+// server accepts the message and return the ID it assigned.
 type Publisher interface {
 	PublishMessage(ctx context.Context, data Data) (messageID string, err error)
 	PublishMessageWithAttributes(ctx context.Context, data Data, attributes map[string]string) (messageID string, err error)
 	Close() error
 }
 
+// NewPublisher returns a Publisher for topicID in projectID. credentialsJSON
+// is a service-account key; when it is empty, Application Default Credentials
+// are used. Close the Publisher to flush pending messages and release the
+// client.
 func NewPublisher(projectID, topicID, credentialsJSON string) (Publisher, error) {
 	ctx := context.Background()
 	var opts []option.ClientOption

@@ -2,6 +2,7 @@ package pubsub
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -102,7 +103,7 @@ func TestMockPublishError(t *testing.T) {
 	var publisher Publisher = pub
 
 	_, err := publisher.PublishMessage(context.Background(), Data{ID: "fail"})
-	if err != context.DeadlineExceeded {
+	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("expected DeadlineExceeded, got %v", err)
 	}
 }

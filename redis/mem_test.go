@@ -422,11 +422,9 @@ func TestWithRetryableDistributedLock(t *testing.T) {
 	_, _ = r.SetNX(ctx, "lock:retry-job", "holder", 1*time.Second)
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		mr.FastForward(2 * time.Second)
-	}()
+	})
 
 	result, err := r.WithRetryableDistributedLock(ctx, "retry-job", func() (any, error) {
 		return "acquired", nil

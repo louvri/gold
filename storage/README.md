@@ -8,6 +8,8 @@ Google Cloud Storage client wrapper for uploading, downloading, and managing obj
 go get github.com/louvri/gold/storage
 ```
 
+Requires Go 1.26 or later.
+
 ## Usage
 
 ### Create Client

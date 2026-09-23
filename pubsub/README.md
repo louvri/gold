@@ -8,6 +8,8 @@ Google Cloud PubSub client wrapper for publishing and subscribing to topics.
 go get github.com/louvri/gold/pubsub
 ```
 
+Requires Go 1.26 or later.
+
 ## Usage
 
 ### Publisher

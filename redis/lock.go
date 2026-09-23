@@ -10,6 +10,9 @@ import (
 )
 
 const (
+	// SessionLockScript acquires KEYS[1] for the owner secret ARGV[1], or
+	// renews it when ARGV[1] already owns it, with a TTL of ARGV[2] seconds.
+	// It returns 1 on success and 0 when another owner holds the lock.
 	SessionLockScript = `
 		local v = redis.call("GET", KEYS[1])
 		if v == false or v == ARGV[1]
@@ -19,6 +22,9 @@ const (
 			return 0
 		end`
 
+	// SessionUnlockScript releases KEYS[1] when ARGV[1] owns it. It returns 1
+	// when the lock was released or was already free, and 0 when another owner
+	// holds it.
 	SessionUnlockScript = `
 		local v = redis.call("GET",KEYS[1])
 		if v == false then
