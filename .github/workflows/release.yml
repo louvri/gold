@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       # One module refusing to release (see next-version.sh) must not cancel
-      # another between pushing its tag and creating its release.
+      # the other modules' releases.
       fail-fast: false
       matrix:
         module: [pubsub, redis, storage]

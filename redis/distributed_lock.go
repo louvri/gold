@@ -13,10 +13,14 @@ import (
 
 var (
 	// ErrDistributedLockNotAcquired is returned when another holder has the
-	// lock - for WithRetryableDistributedLock, still after the timeout.
+	// lock. WithRetryableDistributedLock returns it when its timeout passes
+	// between attempts; a deadline that expires during an attempt surfaces as
+	// that attempt's wrapped context error instead.
 	ErrDistributedLockNotAcquired = errors.New("distributed lock not acquired")
-	// ErrDistributedLockNotHeld is returned when releasing a lock this client
-	// no longer holds, typically because its TTL expired first.
+	// ErrDistributedLockNotHeld reports that a release found the lock no
+	// longer held by this client, typically because its TTL expired before fn
+	// returned. WithDistributedLock and WithRetryableDistributedLock discard
+	// release errors, so it does not reach their callers.
 	ErrDistributedLockNotHeld = errors.New("distributed lock not held by this client")
 )
 
