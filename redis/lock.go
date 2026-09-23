@@ -2,7 +2,9 @@ package redis
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
@@ -36,13 +38,26 @@ const (
 		end`
 )
 
+// ErrEmptyLockSecret is returned by Lock and Unlock for an empty secret. The
+// secret identifies the lock's owner, so an empty one would make every caller
+// that also passes "" its owner, and the lock would exclude no one.
+var ErrEmptyLockSecret = errors.New("lock secret must not be empty")
+
 func (c *redisClient) Lock(ctx context.Context, name, secret string, ttl ...time.Duration) (bool, error) {
+	if secret == "" {
+		return false, ErrEmptyLockSecret
+	}
 	lockTTL := 24 * time.Hour
 	if len(ttl) > 0 {
 		lockTTL = ttl[0]
 	}
+	if lockTTL <= 0 {
+		return false, fmt.Errorf("lock %s: ttl must be positive, got %s", name, lockTTL)
+	}
+	// The script takes whole seconds; round up so a sub-second TTL does not
+	// truncate to zero, which Redis rejects.
 	script := goRedis.NewScript(SessionLockScript)
-	result := script.Run(ctx, c.client, []string{name}, secret, int(lockTTL.Seconds()))
+	result := script.Run(ctx, c.client, []string{name}, secret, int(math.Ceil(lockTTL.Seconds())))
 	if err := result.Err(); err != nil {
 		return false, fmt.Errorf("lock %s: %w", name, err)
 	}
@@ -54,6 +69,9 @@ func (c *redisClient) Lock(ctx context.Context, name, secret string, ttl ...time
 }
 
 func (c *redisClient) Unlock(ctx context.Context, name, secret string) (bool, error) {
+	if secret == "" {
+		return false, ErrEmptyLockSecret
+	}
 	script := goRedis.NewScript(SessionUnlockScript)
 	result := script.Run(ctx, c.client, []string{name}, secret)
 	if err := result.Err(); err != nil {

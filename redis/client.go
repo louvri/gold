@@ -30,7 +30,14 @@ type Client interface {
 	Expire(ctx context.Context, key string, ttl time.Duration) (bool, error)
 	TTL(ctx context.Context, key string) (time.Duration, error)
 	Scan(ctx context.Context, pattern string, count int64) ([]string, error)
+	// Lock acquires the session lock name for secret, or renews it when
+	// secret already holds it, for ttl (default 24h, rounded up to whole
+	// seconds). It reports false when another secret holds the lock. The
+	// secret must be non-empty and unique to its holder.
 	Lock(ctx context.Context, name, secret string, ttl ...time.Duration) (bool, error)
+	// Unlock releases the session lock name when secret holds it. It reports
+	// true when the lock is released or already free, and false when another
+	// secret holds it.
 	Unlock(ctx context.Context, name, secret string) (bool, error)
 	RedisClient() *goRedis.Client
 	WithRetryableDistributedLock(ctx context.Context, key string, fn func() (any, error), timeout, retryPeriod time.Duration, ttl ...time.Duration) (any, error)

@@ -52,7 +52,7 @@ keys, err := client.Scan(ctx, "prefix:*", 100)
 
 ### Session Lock
 
-Reentrant lock using a caller-provided secret. The same secret can re-lock (idempotent), but a different secret will be rejected while the lock is held.
+Reentrant lock using a caller-provided secret. The same secret can re-lock (idempotent), but a different secret will be rejected while the lock is held. The secret must be non-empty and unique to its holder: an empty one returns `ErrEmptyLockSecret`, since it would make every caller the owner. The TTL defaults to 24h and is rounded up to whole seconds.
 
 ```go
 ctx := context.Background()

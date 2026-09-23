@@ -367,6 +367,49 @@ func TestUnlockWrongSecret(t *testing.T) {
 	_, _ = r.Unlock(ctx, "test-lock-wrong", "correct")
 }
 
+func TestLockRejectsEmptySecret(t *testing.T) {
+	r, _ := setup(t)
+	ctx := context.Background()
+
+	// An empty secret would let every caller "own" the lock.
+	ok, err := r.Lock(ctx, "empty-secret", "", time.Minute)
+	if !errors.Is(err, ErrEmptyLockSecret) || ok {
+		t.Fatalf("Lock with empty secret: got (%v, %v), want (false, ErrEmptyLockSecret)", ok, err)
+	}
+
+	if ok, err := r.Lock(ctx, "empty-secret", "holder", time.Minute); err != nil || !ok {
+		t.Fatalf("Lock by holder: got (%v, %v), want (true, nil)", ok, err)
+	}
+	ok, err = r.Unlock(ctx, "empty-secret", "")
+	if !errors.Is(err, ErrEmptyLockSecret) || ok {
+		t.Fatalf("Unlock with empty secret: got (%v, %v), want (false, ErrEmptyLockSecret)", ok, err)
+	}
+	if held, _ := r.Exists(ctx, "empty-secret"); !held {
+		t.Fatal("an empty-secret Unlock released another holder's lock")
+	}
+}
+
+func TestLockSubSecondTTL(t *testing.T) {
+	r, mr := setup(t)
+	ctx := context.Background()
+
+	ok, err := r.Lock(ctx, "short", "holder", 500*time.Millisecond)
+	if err != nil || !ok {
+		t.Fatalf("Lock with 500ms TTL: got (%v, %v), want (true, nil)", ok, err)
+	}
+	// Rounded up to whole seconds, never down to an invalid zero.
+	if ttl := mr.TTL("short"); ttl != time.Second {
+		t.Fatalf("TTL: got %v, want 1s", ttl)
+	}
+}
+
+func TestLockRejectsNonPositiveTTL(t *testing.T) {
+	r, _ := setup(t)
+	if ok, err := r.Lock(context.Background(), "zero", "holder", 0); err == nil || ok {
+		t.Fatalf("Lock with zero TTL: got (%v, %v), want an error", ok, err)
+	}
+}
+
 // --- Distributed Lock ---
 
 func TestWithDistributedLock(t *testing.T) {
