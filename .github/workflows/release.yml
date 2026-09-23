@@ -27,6 +27,9 @@ jobs:
   verify:
     name: Verify (${{ matrix.module }}, go ${{ matrix.go }})
     runs-on: ubuntu-latest
+    # The tests need no write access; only the release job does.
+    permissions:
+      contents: read
     strategy:
       matrix:
         module: [pubsub, redis, storage]
