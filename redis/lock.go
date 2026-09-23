@@ -43,21 +43,37 @@ const (
 // that also passes "" its owner, and the lock would exclude no one.
 var ErrEmptyLockSecret = errors.New("lock secret must not be empty")
 
+// The scripts are built once: NewScript hashes the source for EVALSHA.
+var (
+	sessionLockScript   = goRedis.NewScript(SessionLockScript)
+	sessionUnlockScript = goRedis.NewScript(SessionUnlockScript)
+)
+
+// lockTTL returns the first of ttl, or fallback when none is given, and
+// refuses a non-positive TTL: Redis would store the lock without expiry or
+// reject it, and a lock without expiry outlives a crashed holder forever.
+func lockTTL(name string, fallback time.Duration, ttl []time.Duration) (time.Duration, error) {
+	d := fallback
+	if len(ttl) > 0 {
+		d = ttl[0]
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("lock %s: ttl must be positive, got %s", name, d)
+	}
+	return d, nil
+}
+
 func (c *redisClient) Lock(ctx context.Context, name, secret string, ttl ...time.Duration) (bool, error) {
 	if secret == "" {
 		return false, ErrEmptyLockSecret
 	}
-	lockTTL := 24 * time.Hour
-	if len(ttl) > 0 {
-		lockTTL = ttl[0]
-	}
-	if lockTTL <= 0 {
-		return false, fmt.Errorf("lock %s: ttl must be positive, got %s", name, lockTTL)
+	d, err := lockTTL(name, 24*time.Hour, ttl)
+	if err != nil {
+		return false, err
 	}
 	// The script takes whole seconds; round up so a sub-second TTL does not
 	// truncate to zero, which Redis rejects.
-	script := goRedis.NewScript(SessionLockScript)
-	result := script.Run(ctx, c.client, []string{name}, secret, int(math.Ceil(lockTTL.Seconds())))
+	result := sessionLockScript.Run(ctx, c.client, []string{name}, secret, int(math.Ceil(d.Seconds())))
 	if err := result.Err(); err != nil {
 		return false, fmt.Errorf("lock %s: %w", name, err)
 	}
@@ -72,8 +88,7 @@ func (c *redisClient) Unlock(ctx context.Context, name, secret string) (bool, er
 	if secret == "" {
 		return false, ErrEmptyLockSecret
 	}
-	script := goRedis.NewScript(SessionUnlockScript)
-	result := script.Run(ctx, c.client, []string{name}, secret)
+	result := sessionUnlockScript.Run(ctx, c.client, []string{name}, secret)
 	if err := result.Err(); err != nil {
 		return false, fmt.Errorf("unlock %s: %w", name, err)
 	}

@@ -403,6 +403,24 @@ func TestLockSubSecondTTL(t *testing.T) {
 	}
 }
 
+func TestDistributedLockRejectsNonPositiveTTL(t *testing.T) {
+	r, mr := setup(t)
+	ctx := context.Background()
+	fn := func() (any, error) { return nil, nil }
+
+	// A zero TTL would set the lock key without expiry, so a crash before
+	// release would hold the lock forever.
+	if _, err := r.WithDistributedLock(ctx, "no-ttl", fn, 0); err == nil {
+		t.Fatal("WithDistributedLock with zero TTL: want an error")
+	}
+	if _, err := r.WithRetryableDistributedLock(ctx, "no-ttl", fn, time.Second, 10*time.Millisecond, -time.Second); err == nil {
+		t.Fatal("WithRetryableDistributedLock with negative TTL: want an error")
+	}
+	if mr.Exists("lock:no-ttl") {
+		t.Fatal("a rejected TTL still set the lock key")
+	}
+}
+
 func TestLockRejectsNonPositiveTTL(t *testing.T) {
 	r, _ := setup(t)
 	if ok, err := r.Lock(context.Background(), "zero", "holder", 0); err == nil || ok {

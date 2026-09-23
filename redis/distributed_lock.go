@@ -20,18 +20,17 @@ var (
 
 // WithRetryableDistributedLock executes a function while holding a distributed lock with retry mechanism.
 func (c *redisClient) WithRetryableDistributedLock(ctx context.Context, key string, fn func() (any, error), timeout, retryPeriod time.Duration, ttl ...time.Duration) (any, error) {
-	lockTTL := 5 * time.Second
-	if len(ttl) > 0 {
-		lockTTL = ttl[0]
-	}
-
 	lockKey := "lock:" + key
+	d, err := lockTTL(lockKey, 5*time.Second, ttl)
+	if err != nil {
+		return nil, err
+	}
 	lockValue, err := generateUniqueValue()
 	if err != nil {
 		return nil, err
 	}
 
-	err = c.acquireLockWithRetries(ctx, lockKey, lockValue, lockTTL, timeout, retryPeriod)
+	err = c.acquireLockWithRetries(ctx, lockKey, lockValue, d, timeout, retryPeriod)
 	if err != nil {
 		return nil, err
 	}
@@ -45,18 +44,17 @@ func (c *redisClient) WithRetryableDistributedLock(ctx context.Context, key stri
 
 // WithDistributedLock executes a function while holding a distributed lock.
 func (c *redisClient) WithDistributedLock(ctx context.Context, key string, fn func() (any, error), ttl ...time.Duration) (any, error) {
-	lockTTL := 5 * time.Second
-	if len(ttl) > 0 {
-		lockTTL = ttl[0]
-	}
-
 	lockKey := "lock:" + key
+	d, err := lockTTL(lockKey, 5*time.Second, ttl)
+	if err != nil {
+		return nil, err
+	}
 	lockValue, err := generateUniqueValue()
 	if err != nil {
 		return nil, err
 	}
 
-	err = c.acquireDistributedLock(ctx, lockKey, lockValue, lockTTL)
+	err = c.acquireDistributedLock(ctx, lockKey, lockValue, d)
 	if err != nil {
 		return nil, err
 	}
