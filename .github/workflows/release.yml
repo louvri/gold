@@ -50,8 +50,11 @@ jobs:
             echo "new_tag=${next}" >> "$GITHUB_OUTPUT"
           fi
 
-      # Notes start from the tag the version was computed from, not from the
-      # newest release of any module.
+      # One call creates the tag and the release, so a failure leaves neither
+      # and a re-run retries both; a tag pushed on its own would make the
+      # re-run see an unchanged module and never create the release. Notes
+      # start from the tag the version was computed from, not from the newest
+      # release of any module.
       - name: Create tag and release
         if: steps.version.outputs.skip != 'true'
         env:
@@ -60,10 +63,15 @@ jobs:
           BASE_TAG: ${{ steps.version.outputs.base }}
         run: |
           set -euo pipefail
-          git tag "$NEW_TAG"
-          git push origin "$NEW_TAG"
+          # Only tags reachable from HEAD are a version's base, so a stray tag
+          # elsewhere may already carry this name; publishing a release on it
+          # would silently point the release at that commit.
+          if git rev-parse -q --verify "refs/tags/${NEW_TAG}" >/dev/null; then
+            echo "::error::${NEW_TAG} already exists on another commit; refusing to release on it." >&2
+            exit 1
+          fi
           notes_from=()
           if [ -n "$BASE_TAG" ]; then
             notes_from=(--notes-start-tag "$BASE_TAG")
           fi
-          gh release create "$NEW_TAG" --generate-notes "${notes_from[@]}" --title "$NEW_TAG"
+          gh release create "$NEW_TAG" --target "$GITHUB_SHA" --generate-notes "${notes_from[@]}" --title "$NEW_TAG"

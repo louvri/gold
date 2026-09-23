@@ -7,6 +7,9 @@
 set -euo pipefail
 
 script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/next-version.sh"
+# The throwaway repositories must not pick up the developer's git config -
+# signing, hooks or merge.ff would change or break the cases.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 workdir="$(mktemp -d)"
 trap 'rm -rf "$workdir"' EXIT
 
@@ -681,6 +684,18 @@ expect_base "base is the newest stable tag of the module" mod/v0.0.5
 
 repo z2 other/v1.0.0
 expect_base "base is empty before the first release" ""
+
+# Only tags reachable from HEAD are a base: a higher tag pushed by hand on a
+# commit outside the mainline must not become the range's start.
+repo c24 mod/v0.2.3
+trunk=$(git symbolic-ref --short HEAD)
+git checkout -q -b stray
+commit "fix: stray"
+git tag mod/v9.0.0
+git checkout -q "$trunk"
+commit "fix: y"
+expect "a tag not reachable from HEAD is not the base" mod/v0.2.4
+expect_base "and --base skips it too" mod/v0.2.3
 
 # ----------------------------------------------------------------------------
 cd /

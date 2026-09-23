@@ -50,8 +50,10 @@ path="${module}/"
 
 # Read the tag list into a variable rather than piping to head: with
 # `pipefail`, git being SIGPIPE'd once the list outgrows the pipe
-# buffer would fail the step.
-tags=$(git tag --sort=-v:refname --list "${module}/v[0-9]*.[0-9]*.[0-9]*")
+# buffer would fail the step. Only tags reachable from HEAD count: one pushed
+# by hand on a commit outside the mainline would make the range and the
+# unchanged-tree check start from the wrong place.
+tags=$(git tag --sort=-v:refname --merged HEAD --list "${module}/v[0-9]*.[0-9]*.[0-9]*")
 
 # Take the newest tag that is exactly MODULE/vMAJOR.MINOR.PATCH; the glob
 # above still admits things like MODULE/v1.2.3-rc1.
@@ -83,9 +85,22 @@ else
   first_release=true
 fi
 
+# changed FROM TO - succeed when the module differs between FROM and TO.
+# A git error fails the step rather than counting as a change: the version is
+# about to be published, and a tag cannot be withdrawn.
+changed() {
+  local status=0
+  git diff --quiet "$1" "$2" -- "$path" || status=$?
+  if [ "$status" -gt 1 ]; then
+    echo "git diff ${1} ${2} failed" >&2
+    exit 1
+  fi
+  [ "$status" -eq 1 ]
+}
+
 # A change reverted before its release leaves the module as it was tagged;
 # publishing it would repeat the last version under a new number.
-if [ "$first_release" = false ] && git diff --quiet "$tag" HEAD -- "$path"; then
+if [ "$first_release" = false ] && ! changed "$tag" HEAD; then
   echo "${path} is unchanged since ${tag}; nothing to release." >&2
   echo "skip"
   exit 0
@@ -234,13 +249,7 @@ merge_changed_module() {
     echo "git merge-tree failed on ${1}" >&2
     exit 1
   fi
-  status=0
-  git diff --quiet "${auto%%$'\n'*}" "$1" -- "$path" || status=$?
-  if [ "$status" -gt 1 ]; then
-    echo "git diff failed on ${1}" >&2
-    exit 1
-  fi
-  [ "$status" -eq 1 ]
+  changed "${auto%%$'\n'*}" "$1"
 }
 
 # Lists are read into variables before looping over them: a failure inside
@@ -280,7 +289,7 @@ note() {
 }
 
 while IFS= read -r merge; do
-  if [ -z "$merge" ] || git diff --quiet "${merge}^1" "$merge" -- "$path"; then
+  if [ -z "$merge" ] || ! changed "${merge}^1" "$merge"; then
     continue
   fi
   rank_merge "$merge"

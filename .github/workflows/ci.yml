@@ -28,10 +28,16 @@ jobs:
       - name: Detect changed modules
         id: changes
         run: |
+          # A change to this workflow affects every module's jobs, so it runs
+          # them all; a git error also counts as a change.
+          all=false
+          if ! git diff --quiet origin/main...HEAD -- .github/workflows/ci.yml; then
+            all=true
+          fi
           modules=()
           for module in pubsub redis storage; do
             changed=$(git diff --name-only origin/main...HEAD -- "$module/" 2>/dev/null || echo "$module/")
-            if [ -n "$changed" ]; then
+            if [ "$all" = true ] || [ -n "$changed" ]; then
               modules+=("\"$module\"")
             fi
           done
@@ -66,7 +72,8 @@ jobs:
         with:
           version: v2.13.2
           working-directory: ${{ matrix.module }}
-          args: --enable=modernize
+          # Uncapped: by default a rule's findings stop at 3 per run.
+          args: --enable=modernize --max-issues-per-linter=0 --max-same-issues=0
 
       # Fails only on vulnerabilities reachable from gold's code.
       - name: govulncheck
