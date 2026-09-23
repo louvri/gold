@@ -38,10 +38,15 @@ const (
 		end`
 )
 
-// ErrEmptyLockSecret is returned by Lock and Unlock for an empty secret. The
-// secret identifies the lock's owner, so an empty one would make every caller
-// that also passes "" its owner, and the lock would exclude no one.
+// ErrEmptyLockSecret is returned by Lock for an empty secret. The secret
+// identifies the lock's owner, so an empty one would make every caller that
+// also passes "" its owner, and the lock would exclude no one. Unlock still
+// accepts "": it can release only a lock stored with "", such as one an older
+// release took, and never another holder's.
 var ErrEmptyLockSecret = errors.New("lock secret must not be empty")
+
+// ErrInvalidLockTTL is returned for a non-positive lock TTL.
+var ErrInvalidLockTTL = errors.New("lock ttl must be positive")
 
 // The scripts are built once: NewScript hashes the source for EVALSHA.
 var (
@@ -58,7 +63,7 @@ func lockTTL(name string, fallback time.Duration, ttl []time.Duration) (time.Dur
 		d = ttl[0]
 	}
 	if d <= 0 {
-		return 0, fmt.Errorf("lock %s: ttl must be positive, got %s", name, d)
+		return 0, fmt.Errorf("%w: %s got %s", ErrInvalidLockTTL, name, d)
 	}
 	return d, nil
 }
@@ -85,9 +90,6 @@ func (c *redisClient) Lock(ctx context.Context, name, secret string, ttl ...time
 }
 
 func (c *redisClient) Unlock(ctx context.Context, name, secret string) (bool, error) {
-	if secret == "" {
-		return false, ErrEmptyLockSecret
-	}
 	result := sessionUnlockScript.Run(ctx, c.client, []string{name}, secret)
 	if err := result.Err(); err != nil {
 		return false, fmt.Errorf("unlock %s: %w", name, err)

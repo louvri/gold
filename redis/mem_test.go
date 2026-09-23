@@ -377,15 +377,32 @@ func TestLockRejectsEmptySecret(t *testing.T) {
 		t.Fatalf("Lock with empty secret: got (%v, %v), want (false, ErrEmptyLockSecret)", ok, err)
 	}
 
+	// Unlock still accepts "": it can only release a lock stored with "" -
+	// one an older build took, which never excluded anyone - and never
+	// another holder's.
 	if ok, err := r.Lock(ctx, "empty-secret", "holder", time.Minute); err != nil || !ok {
 		t.Fatalf("Lock by holder: got (%v, %v), want (true, nil)", ok, err)
 	}
-	ok, err = r.Unlock(ctx, "empty-secret", "")
-	if !errors.Is(err, ErrEmptyLockSecret) || ok {
-		t.Fatalf("Unlock with empty secret: got (%v, %v), want (false, ErrEmptyLockSecret)", ok, err)
+	if ok, err := r.Unlock(ctx, "empty-secret", ""); err != nil || ok {
+		t.Fatalf("Unlock with empty secret of a held lock: got (%v, %v), want (false, nil)", ok, err)
 	}
 	if held, _ := r.Exists(ctx, "empty-secret"); !held {
 		t.Fatal("an empty-secret Unlock released another holder's lock")
+	}
+}
+
+func TestUnlockReleasesLegacyEmptySecretLock(t *testing.T) {
+	r, _ := setup(t)
+	ctx := context.Background()
+
+	if err := r.SetData(ctx, "legacy", "", time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := r.Unlock(ctx, "legacy", ""); err != nil || !ok {
+		t.Fatalf("Unlock of a legacy empty-secret lock: got (%v, %v), want (true, nil)", ok, err)
+	}
+	if held, _ := r.Exists(ctx, "legacy"); held {
+		t.Fatal("the legacy lock is still held")
 	}
 }
 
@@ -410,21 +427,36 @@ func TestDistributedLockRejectsNonPositiveTTL(t *testing.T) {
 
 	// A zero TTL would set the lock key without expiry, so a crash before
 	// release would hold the lock forever.
-	if _, err := r.WithDistributedLock(ctx, "no-ttl", fn, 0); err == nil {
-		t.Fatal("WithDistributedLock with zero TTL: want an error")
+	if _, err := r.WithDistributedLock(ctx, "no-ttl", fn, 0); !errors.Is(err, ErrInvalidLockTTL) {
+		t.Fatalf("WithDistributedLock with zero TTL: got %v, want ErrInvalidLockTTL", err)
 	}
-	if _, err := r.WithRetryableDistributedLock(ctx, "no-ttl", fn, time.Second, 10*time.Millisecond, -time.Second); err == nil {
-		t.Fatal("WithRetryableDistributedLock with negative TTL: want an error")
+	if _, err := r.WithRetryableDistributedLock(ctx, "no-ttl", fn, time.Second, 10*time.Millisecond, -time.Second); !errors.Is(err, ErrInvalidLockTTL) {
+		t.Fatalf("WithRetryableDistributedLock with negative TTL: got %v, want ErrInvalidLockTTL", err)
 	}
 	if mr.Exists("lock:no-ttl") {
 		t.Fatal("a rejected TTL still set the lock key")
 	}
 }
 
+func TestRetryableDistributedLockRejectsNonPositiveRetryPeriod(t *testing.T) {
+	r, _ := setup(t)
+	ctx := context.Background()
+
+	// Held by someone else, so the retry loop would start - and
+	// time.NewTicker panics on a non-positive period.
+	if ok, err := r.SetNX(ctx, "lock:busy", "other", time.Minute); err != nil || !ok {
+		t.Fatalf("SetNX: got (%v, %v)", ok, err)
+	}
+	_, err := r.WithRetryableDistributedLock(ctx, "busy", func() (any, error) { return nil, nil }, time.Second, 0)
+	if err == nil {
+		t.Fatal("zero retry period: want an error")
+	}
+}
+
 func TestLockRejectsNonPositiveTTL(t *testing.T) {
 	r, _ := setup(t)
-	if ok, err := r.Lock(context.Background(), "zero", "holder", 0); err == nil || ok {
-		t.Fatalf("Lock with zero TTL: got (%v, %v), want an error", ok, err)
+	if ok, err := r.Lock(context.Background(), "zero", "holder", 0); !errors.Is(err, ErrInvalidLockTTL) || ok {
+		t.Fatalf("Lock with zero TTL: got (%v, %v), want ErrInvalidLockTTL", ok, err)
 	}
 }
 

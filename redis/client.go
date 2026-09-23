@@ -33,7 +33,8 @@ type Client interface {
 	// Lock acquires the session lock name for secret, or renews it when
 	// secret already holds it, for ttl (default 24h, rounded up to whole
 	// seconds). It reports false when another secret holds the lock. The
-	// secret must be non-empty and unique to its holder.
+	// secret must be non-empty (ErrEmptyLockSecret) and unique to its holder;
+	// a non-positive ttl returns ErrInvalidLockTTL.
 	Lock(ctx context.Context, name, secret string, ttl ...time.Duration) (bool, error)
 	// Unlock releases the session lock name when secret holds it. It reports
 	// true when the lock is released or already free, and false when another

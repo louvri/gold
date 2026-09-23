@@ -180,8 +180,8 @@ rank_change() {
   fi
   if [ -z "$explicit" ]; then
     if [ -n "$levels" ]; then
-      # Present but unreadable: say so rather than fall through to the
-      # markers, which would silently produce a different version.
+      # Present but unreadable: fall back to the markers, but say so - doing
+      # it silently would hide why the version is not the one asked for.
       echo "Release-As: trailer on '${subjects%%$'\n'*}' is not major, minor, patch or skip; ignoring it." >&2
     fi
     ranked="$markers"

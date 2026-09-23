@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	goRedis "github.com/redis/go-redis/v9"
 )
 
 var (
@@ -20,8 +22,12 @@ var (
 
 // WithRetryableDistributedLock executes a function while holding a distributed lock with retry mechanism.
 func (c *redisClient) WithRetryableDistributedLock(ctx context.Context, key string, fn func() (any, error), timeout, retryPeriod time.Duration, ttl ...time.Duration) (any, error) {
+	// time.NewTicker panics on a non-positive period.
+	if retryPeriod <= 0 {
+		return nil, fmt.Errorf("lock %s: retry period must be positive, got %s", key, retryPeriod)
+	}
 	lockKey := "lock:" + key
-	d, err := lockTTL(lockKey, 5*time.Second, ttl)
+	d, err := lockTTL(key, 5*time.Second, ttl)
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +51,7 @@ func (c *redisClient) WithRetryableDistributedLock(ctx context.Context, key stri
 // WithDistributedLock executes a function while holding a distributed lock.
 func (c *redisClient) WithDistributedLock(ctx context.Context, key string, fn func() (any, error), ttl ...time.Duration) (any, error) {
 	lockKey := "lock:" + key
-	d, err := lockTTL(lockKey, 5*time.Second, ttl)
+	d, err := lockTTL(key, 5*time.Second, ttl)
 	if err != nil {
 		return nil, err
 	}
@@ -104,15 +110,7 @@ func (c *redisClient) acquireDistributedLock(ctx context.Context, key, value str
 
 // releaseDistributedLock releases the distributed lock.
 func (c *redisClient) releaseDistributedLock(ctx context.Context, key, value string) error {
-	script := `
-		if redis.call("GET", KEYS[1]) == ARGV[1] then
-			return redis.call("DEL", KEYS[1])
-		else
-			return 0
-		end
-	`
-
-	result, err := c.client.Eval(ctx, script, []string{key}, value).Result()
+	result, err := distributedUnlockScript.Run(ctx, c.client, []string{key}, value).Result()
 	if err != nil {
 		return fmt.Errorf("releaseDistributedLock %s: %w", key, err)
 	}
@@ -123,6 +121,17 @@ func (c *redisClient) releaseDistributedLock(ctx context.Context, key, value str
 
 	return nil
 }
+
+// distributedUnlockScript deletes KEYS[1] only while it still holds this
+// holder's token ARGV[1]. It is built once: NewScript hashes the source for
+// EVALSHA.
+var distributedUnlockScript = goRedis.NewScript(`
+	if redis.call("GET", KEYS[1]) == ARGV[1] then
+		return redis.call("DEL", KEYS[1])
+	else
+		return 0
+	end
+`)
 
 func generateUniqueValue() (string, error) {
 	b := make([]byte, 16)
