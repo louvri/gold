@@ -1,3 +1,6 @@
+// Package storage wraps Google Cloud Storage for a single bucket: uploads return
+// a V4 signed GET URL, and objects are downloaded, deleted, listed and checked
+// by name.
 package storage
 
 import (
@@ -14,6 +17,7 @@ import (
 	"google.golang.org/api/option"
 )
 
+// Client works on the one bucket given to New.
 type Client interface {
 	UploadByPath(ctx context.Context, path string) (*string, error)
 	UploadFromReader(ctx context.Context, objectName string, reader io.Reader) (*string, error)
@@ -24,6 +28,11 @@ type Client interface {
 	Exists(ctx context.Context, objectName string) (bool, error)
 }
 
+// New returns a Client for bucketName. credential is either the path of a
+// service-account key file or the key's JSON itself. customEndpoint, when set,
+// overrides the API endpoint, for an emulator say. Uploads are stored with
+// contentType and return a V4 signed GET URL that expires after
+// expiryDuration.
 func New(credential, contentType, bucketName, customEndpoint string, expiryDuration time.Duration) (Client, error) {
 	var opts []option.ClientOption
 	if customEndpoint != "" {
@@ -55,7 +64,7 @@ type cloudClient struct {
 }
 
 func (c *cloudClient) UploadByPath(ctx context.Context, path string) (*string, error) {
-	file, err := os.Open(path)
+	file, err := os.Open(path) //nolint:gosec // G304: path is the caller's own argument; opening it is what UploadByPath does.
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +97,7 @@ func (c *cloudClient) UploadFromReader(ctx context.Context, objectName string, r
 }
 
 func (c *cloudClient) DownloadToPath(ctx context.Context, objectName, destPath string) error {
-	file, err := os.Create(destPath)
+	file, err := os.Create(destPath) //nolint:gosec // G304: destPath is the caller's own argument; writing it is what DownloadToPath does.
 	if err != nil {
 		return err
 	}

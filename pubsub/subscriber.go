@@ -8,16 +8,25 @@ import (
 	"google.golang.org/api/option"
 )
 
+// Subscriber receives messages from one subscription. Receive calls the
+// callback for each message until ctx is done or the subscription fails; the
+// callback must Ack or Nack every message it is given.
 type Subscriber interface {
 	Receive(context.Context, func(ctx context.Context, msg *pubsub.Message)) error
 	Close() error
 }
 
+// SubscriberOption tunes flow control for NewSubscriber. A zero field keeps
+// the client library's default; a negative MaxOutstandingMessages removes the
+// limit.
 type SubscriberOption struct {
 	MaxOutstandingMessages int
 	NumGoroutines          int
 }
 
+// NewSubscriber returns a Subscriber for subscriptionID in projectID.
+// credentialsJSON works as in NewPublisher. Only the first SubscriberOption is
+// used.
 func NewSubscriber(projectID, subscriptionID, credentialsJSON string, opts ...SubscriberOption) (Subscriber, error) {
 	ctx := context.Background()
 	var clientOpts []option.ClientOption
@@ -42,6 +51,7 @@ func NewSubscriber(projectID, subscriptionID, credentialsJSON string, opts ...Su
 }
 
 // NewSubscriberWithLimit creates a subscriber with concurrency limits.
+//
 // Deprecated: Use NewSubscriber with SubscriberOption instead.
 func NewSubscriberWithLimit(projectID, subscriptionID, credentialsJSON string, maxOutstandingMessages, numGoroutines int) (Subscriber, error) {
 	return NewSubscriber(projectID, subscriptionID, credentialsJSON, SubscriberOption{

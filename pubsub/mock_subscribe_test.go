@@ -37,7 +37,7 @@ func TestMockSubscribeAndReceive(t *testing.T) {
 	var subscriber Subscriber = sub
 
 	var received int32
-	err := subscriber.Receive(context.Background(), func(_ context.Context, msg *pubsub.Message) {
+	err := subscriber.Receive(context.Background(), func(_ context.Context, _ *pubsub.Message) {
 		atomic.AddInt32(&received, 1)
 	})
 	if err != nil {

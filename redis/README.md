@@ -8,6 +8,8 @@ Redis client wrapper with support for caching, session locking, and distributed 
 go get github.com/louvri/gold/redis
 ```
 
+Requires Go 1.25 or later.
+
 ## Usage
 
 ### Create Client
@@ -50,7 +52,7 @@ keys, err := client.Scan(ctx, "prefix:*", 100)
 
 ### Session Lock
 
-Reentrant lock using a caller-provided secret. The same secret can re-lock (idempotent), but a different secret will be rejected while the lock is held.
+Reentrant lock using a caller-provided secret. The same secret can re-lock (idempotent), but a different secret will be rejected while the lock is held. The secret must be non-empty and unique to its holder: `Lock` returns `ErrEmptyLockSecret` for an empty one, since it would make every caller the owner. (`Unlock` still accepts `""`, so a lock taken that way by an older release can be released; it can never release another holder's lock.) The TTL defaults to 24h and is rounded up to whole seconds.
 
 ```go
 ctx := context.Background()
@@ -65,7 +67,7 @@ ok, err = client.Unlock(ctx, "resource", "my-secret")
 
 ### Distributed Lock
 
-Automatically acquires and releases a lock around a function call using a unique token.
+Automatically acquires and releases a lock around a function call using a unique token. The TTL defaults to 5s and must be positive: a zero TTL used to store the lock without expiry, so a crashed holder kept it forever, and now returns `ErrInvalidLockTTL`. With retry, the timeout and the retry period must be positive too, or it returns `ErrInvalidLockRetry`.
 
 ```go
 ctx := context.Background()

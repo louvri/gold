@@ -1,3 +1,5 @@
+// Package redis wraps go-redis with helpers for caching, session locks and
+// distributed locks.
 package redis
 
 import (
@@ -9,6 +11,10 @@ import (
 	goRedis "github.com/redis/go-redis/v9"
 )
 
+// Client is the set of Redis operations gold exposes. It offers two kinds of
+// lock: Lock and Unlock for long-lived session locks owned by a secret the
+// caller supplies, and WithDistributedLock and WithRetryableDistributedLock
+// for a critical section guarded by an owner token generated per call.
 type Client interface {
 	GetData(ctx context.Context, key string) (string, error)
 	HGetAllData(ctx context.Context, key string) (map[string]string, error)
@@ -24,13 +30,23 @@ type Client interface {
 	Expire(ctx context.Context, key string, ttl time.Duration) (bool, error)
 	TTL(ctx context.Context, key string) (time.Duration, error)
 	Scan(ctx context.Context, pattern string, count int64) ([]string, error)
+	// Lock acquires the session lock name for secret, or renews it when
+	// secret already holds it, for ttl (default 24h, rounded up to whole
+	// seconds). It reports false when another secret holds the lock. The
+	// secret must be non-empty (ErrEmptyLockSecret) and unique to its holder;
+	// a non-positive ttl returns ErrInvalidLockTTL.
 	Lock(ctx context.Context, name, secret string, ttl ...time.Duration) (bool, error)
+	// Unlock releases the session lock name when secret holds it. It reports
+	// true when the lock is released or already free, and false when another
+	// secret holds it.
 	Unlock(ctx context.Context, name, secret string) (bool, error)
 	RedisClient() *goRedis.Client
 	WithRetryableDistributedLock(ctx context.Context, key string, fn func() (any, error), timeout, retryPeriod time.Duration, ttl ...time.Duration) (any, error)
 	WithDistributedLock(ctx context.Context, key string, fn func() (any, error), ttl ...time.Duration) (any, error)
 }
 
+// New returns a Client for the Redis server at host:port, database 0. It does
+// not connect: connection errors surface on the first command.
 func New(host, password, port string) (Client, error) {
 	c := goRedis.NewClient(&goRedis.Options{
 		Addr:     fmt.Sprintf("%s:%s", host, port),
