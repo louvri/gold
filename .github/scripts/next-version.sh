@@ -3,9 +3,10 @@
 #        next-version.sh --base MODULE
 #
 # Prints the tag for MODULE's next release (MODULE/vX.Y.Z), or "skip" when
-# there is nothing to release. With --base, prints the release tag that the
-# next version is computed from instead (empty before the first release), so
-# release notes start where the version bump does. Diagnostics go to stderr
+# there is nothing to release. With --base, prints the newest release tag
+# reachable from HEAD instead (empty before the first release): the start of
+# the range the version is computed from, and so of the release notes. The
+# number itself may go past a newer tag off the mainline; see below. Diagnostics go to stderr
 # so stdout stays machine-readable.
 #
 # Each module is versioned on its own: its tags are MODULE/v*, and only
@@ -48,38 +49,79 @@ if [[ ! "$module" =~ ^[a-z0-9_-]+$ ]]; then
 fi
 path="${module}/"
 
-# newest_stable LIST - print the newest tag in LIST (sorted newest first)
-# that is exactly MODULE/vMAJOR.MINOR.PATCH; the tag glob still admits things
-# like MODULE/v1.2.3-rc1.
-newest_stable() {
-  local candidate
-  while IFS= read -r candidate; do
-    if [[ "$candidate" =~ ^${module}/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-      echo "$candidate"
-      return
-    fi
-  done <<< "$1"
+# stable TAG - succeed when TAG is exactly MODULE/vMAJOR.MINOR.PATCH, setting
+# BASH_REMATCH to its numbers; the tag glob still admits MODULE/v1.2.3-rc1.
+stable() {
+  [[ "$1" =~ ^${module}/v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]
 }
+
+# The major version this module's path is for: N for a path ending in /vN,
+# otherwise 0 or 1, which share a path.
+head_major=1
+if [ -f "${path}go.mod" ]; then
+  module_path=$(sed -nE 's/^module[[:space:]]+([^[:space:]]+).*/\1/p' "${path}go.mod")
+  if [[ "$module_path" =~ /v([0-9]+)$ ]]; then
+    head_major="${BASH_REMATCH[1]}"
+  fi
+fi
 
 # Tag lists are read into variables rather than piped to head: with
 # `pipefail`, git being SIGPIPE'd once a list outgrows the pipe buffer would
 # fail the step.
 #
 # The base - where the range, the unchanged-tree check and the release notes
-# start - is the newest tag reachable from HEAD: a tag pushed by hand on a
-# commit outside the mainline would start them from the wrong place. The
-# version number, though, goes past the newest tag anywhere: a stray tag still
-# owns its version on the module proxy, so reusing its name would collide and
-# a lower version would never be @latest.
+# start - is the newest tag reachable from HEAD. A tag that is not reachable
+# is one of two things:
+# - on a commit after HEAD: a later run already released past this one, and
+#   this run - a re-run of an old, failed release, say - is stale; publishing
+#   would put a higher version on older code, so it releases nothing
+# - on a side branch: a tag pushed by hand off the mainline. It is no base,
+#   but it still owns its version on the module proxy, so the number goes
+#   past it - reusing its name would collide, and a lower version would never
+#   be @latest. A tag of v2 or later is a version of the /vN module path,
+#   though, so it counts only when this path is for the same major.
 glob="${module}/v[0-9]*.[0-9]*.[0-9]*"
 reachable=$(git tag --sort=-v:refname --merged HEAD --list "$glob")
 every=$(git tag --sort=-v:refname --list "$glob")
-tag=$(newest_stable "$reachable")
-top=$(newest_stable "$every")
+tag=""
+while IFS= read -r candidate; do
+  if stable "$candidate"; then
+    tag="$candidate"
+    break
+  fi
+done <<< "$reachable"
+top="$tag"
+while IFS= read -r candidate; do
+  if ! stable "$candidate" || grep -qxF "$candidate" <<< "$reachable"; then
+    continue
+  fi
+  candidate_major="${BASH_REMATCH[1]}"
+  status=0
+  git merge-base --is-ancestor HEAD "$candidate" || status=$?
+  if [ "$status" -gt 1 ]; then
+    echo "git merge-base HEAD ${candidate} failed" >&2
+    exit 1
+  fi
+  if [ "$status" -eq 0 ]; then
+    if [ "$mode" = next ]; then
+      echo "${candidate} is on a later commit than HEAD; this run is stale, nothing to release." >&2
+      echo "skip"
+      exit 0
+    fi
+    continue
+  fi
+  if [ "$candidate_major" -ge 2 ] && [ "$candidate_major" -ne "$head_major" ]; then
+    echo "Ignoring ${candidate}: a v${candidate_major} tag belongs to the /v${candidate_major} module path." >&2
+    continue
+  fi
+  if [ -z "$top" ] || [ "$(printf '%s\n%s\n' "$top" "$candidate" | sort -V | tail -n 1)" = "$candidate" ]; then
+    top="$candidate"
+  fi
+done <<< "$every"
 major=0
 minor=0
 patch=0
-if [[ "$top" =~ ^${module}/v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+if stable "$top"; then
   major="${BASH_REMATCH[1]}"
   minor="${BASH_REMATCH[2]}"
   patch="${BASH_REMATCH[3]}"
@@ -356,5 +398,9 @@ if [ "$major" -ge 2 ]; then
 fi
 
 next="${module}/v${major}.${minor}.${patch}"
-echo "Bumping ${tag} -> ${next} (${level})" >&2
+if [ "$top" != "$tag" ]; then
+  echo "Bumping ${top} (newest ${module} tag; changes counted from ${tag}) -> ${next} (${level})" >&2
+else
+  echo "Bumping ${tag} -> ${next} (${level})" >&2
+fi
 echo "$next"

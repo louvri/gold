@@ -708,6 +708,35 @@ printf '#!/bin/sh\ncase "$1 $2" in "diff --quiet") echo "git diff exploded" >&2;
 chmod +x "$workdir/badgit/git"
 repo c25 mod/v0.2.3; commit "fix: x"
 PATH="$workdir/badgit:$PATH" expect "a failing git diff fails the step" "<script failed>"
+total=$((total + 1))
+stderr=$(PATH="$workdir/badgit:$PATH" "$script" mod 2>&1 >/dev/null) || true
+if grep -q "git diff .* failed" <<< "$stderr"; then
+  printf 'ok   %s\n' "and it is the diff that fails it"
+else
+  printf 'FAIL %s\n       stderr %s\n' "and it is the diff that fails it" "$stderr"
+  failures=$((failures + 1))
+fi
+
+# A run on a commit that a later tag already covers is stale - a re-run of an
+# old, failed release - and must not publish a higher version on older code.
+repo c26 mod/v0.2.0
+commit "fix: a"
+stale=$(git rev-parse HEAD)
+commit "fix: b"
+git tag mod/v0.2.1
+git checkout -q "$stale"
+expect "a run behind an already released commit is stale" skip
+
+# A stray tag of v2 or later is a version of the /vN module path, not of this
+# one, so it neither sets the number nor blocks releases.
+repo c27 mod/v0.3.0
+trunk=$(git symbolic-ref --short HEAD)
+git checkout -q -b stray
+commit "fix: stray"
+git tag mod/v2.0.0
+git checkout -q "$trunk"
+commit "fix: y"
+expect "a stray tag of another major's module path is ignored" mod/v0.3.1
 
 # ----------------------------------------------------------------------------
 cd /
