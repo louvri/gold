@@ -6,8 +6,8 @@
 # there is nothing to release. With --base, prints the newest release tag
 # reachable from HEAD instead (empty before the first release): the start of
 # the range the version is computed from, and so of the release notes. The
-# number itself may go past a newer tag off the mainline; see below. Diagnostics go to stderr
-# so stdout stays machine-readable.
+# number itself may go past a newer tag off the mainline; see below.
+# Diagnostics go to stderr so stdout stays machine-readable.
 #
 # Each module is versioned on its own: its tags are MODULE/v*, and only
 # commits that touch MODULE/ count towards its release, so a trailer on a
@@ -72,14 +72,28 @@ fi
 # The base - where the range, the unchanged-tree check and the release notes
 # start - is the newest tag reachable from HEAD. A tag that is not reachable
 # is one of two things:
-# - on a commit after HEAD: a later run already released past this one, and
-#   this run - a re-run of an old, failed release, say - is stale; publishing
-#   would put a higher version on older code, so it releases nothing
-# - on a side branch: a tag pushed by hand off the mainline. It is no base,
-#   but it still owns its version on the module proxy, so the number goes
-#   past it - reusing its name would collide, and a lower version would never
-#   be @latest. A tag of v2 or later is a version of the /vN module path,
-#   though, so it counts only when this path is for the same major.
+# - a tag of v2 or later for another major: a version of the /vN module path,
+#   not of this one, so it does not count at all
+# - on a mainline commit after HEAD: a later run already released past this
+#   one, and this run - a re-run of an old, failed release, say - is stale;
+#   publishing would put a higher version on older code, so it releases
+#   nothing. The mainline is MAINLINE_REF (the release workflow passes
+#   origin/main); without it, no run is taken for stale
+# - anywhere else: a tag pushed by hand off the mainline. It is no base, but
+#   it still owns its version on the module proxy, so the number goes past
+#   it - reusing its name would collide, and a lower version would never be
+#   @latest
+# ancestor A B - succeed when A is an ancestor of B; a git error fails the step.
+ancestor() {
+  local status=0
+  git merge-base --is-ancestor "$1" "$2" || status=$?
+  if [ "$status" -gt 1 ]; then
+    echo "git merge-base ${1} ${2} failed" >&2
+    exit 1
+  fi
+  [ "$status" -eq 0 ]
+}
+
 glob="${module}/v[0-9]*.[0-9]*.[0-9]*"
 reachable=$(git tag --sort=-v:refname --merged HEAD --list "$glob")
 every=$(git tag --sort=-v:refname --list "$glob")
@@ -96,23 +110,15 @@ while IFS= read -r candidate; do
     continue
   fi
   candidate_major="${BASH_REMATCH[1]}"
-  status=0
-  git merge-base --is-ancestor HEAD "$candidate" || status=$?
-  if [ "$status" -gt 1 ]; then
-    echo "git merge-base HEAD ${candidate} failed" >&2
-    exit 1
-  fi
-  if [ "$status" -eq 0 ]; then
-    if [ "$mode" = next ]; then
-      echo "${candidate} is on a later commit than HEAD; this run is stale, nothing to release." >&2
-      echo "skip"
-      exit 0
-    fi
-    continue
-  fi
   if [ "$candidate_major" -ge 2 ] && [ "$candidate_major" -ne "$head_major" ]; then
     echo "Ignoring ${candidate}: a v${candidate_major} tag belongs to the /v${candidate_major} module path." >&2
     continue
+  fi
+  if [ "$mode" = next ] && [ -n "${MAINLINE_REF:-}" ] \
+    && ancestor HEAD "$candidate" && ancestor "$candidate" "$MAINLINE_REF"; then
+    echo "${candidate} is on a later mainline commit than HEAD; this run is stale, nothing to release." >&2
+    echo "skip"
+    exit 0
   fi
   if [ -z "$top" ] || [ "$(printf '%s\n%s\n' "$top" "$candidate" | sort -V | tail -n 1)" = "$candidate" ]; then
     top="$candidate"
@@ -388,17 +394,14 @@ fi
 # From v2 on, Go requires the major version in the module path. A tag the
 # path does not match is not served as that version, and a published tag
 # cannot be withdrawn, so refuse rather than publish it.
-if [ "$major" -ge 2 ]; then
-  module_path=$(sed -nE 's/^module[[:space:]]+([^[:space:]]+).*/\1/p' "${path}go.mod" 2>/dev/null || true)
-  if [[ "$module_path" != */v"$major" ]]; then
-    echo "${module}/v${major} needs ${path}go.mod to declare a module path ending in /v${major} (found: '${module_path}')." >&2
-    echo "If v${major} was not intended, tag the current main commit by hand with the version you want (git tag ${module}/vX.Y.Z origin/main && git push origin ${module}/vX.Y.Z); later runs start from it. A tag on a commit that is not on main is ignored as a base." >&2
-    exit 1
-  fi
+if [ "$major" -ge 2 ] && [ "$major" -ne "$head_major" ]; then
+  echo "${module}/v${major} needs ${path}go.mod to declare a module path ending in /v${major}." >&2
+  echo "If v${major} was not intended, tag the current main commit by hand with the version you want (git tag ${module}/vX.Y.Z origin/main && git push origin ${module}/vX.Y.Z); later runs start from it. A tag on a commit that is not on main is ignored as a base." >&2
+  exit 1
 fi
 
 next="${module}/v${major}.${minor}.${patch}"
-if [ "$top" != "$tag" ]; then
+if [ -n "$top" ] && [ "$top" != "$tag" ]; then
   echo "Bumping ${top} (newest ${module} tag; changes counted from ${tag}) -> ${next} (${level})" >&2
 else
   echo "Bumping ${tag} -> ${next} (${level})" >&2

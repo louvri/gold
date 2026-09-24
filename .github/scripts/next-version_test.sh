@@ -720,12 +720,24 @@ fi
 # A run on a commit that a later tag already covers is stale - a re-run of an
 # old, failed release - and must not publish a higher version on older code.
 repo c26 mod/v0.2.0
+trunk=$(git symbolic-ref --short HEAD)
 commit "fix: a"
 stale=$(git rev-parse HEAD)
 commit "fix: b"
 git tag mod/v0.2.1
 git checkout -q "$stale"
-expect "a run behind an already released commit is stale" skip
+MAINLINE_REF="$trunk" expect "a run behind an already released mainline commit is stale" skip
+
+# Only a later mainline release makes a run stale: a hand tag on a branch that
+# forked from HEAD is a stray, whose version is skipped past.
+repo c26b mod/v0.2.0
+trunk=$(git symbolic-ref --short HEAD)
+commit "fix: unreleased"
+git checkout -q -b hotfix
+commit "fix: hotfix"
+git tag mod/v0.9.0
+git checkout -q "$trunk"
+MAINLINE_REF="$trunk" expect "a tag on a branch forked from HEAD is a stray, not a later release" mod/v0.9.1
 
 # A stray tag of v2 or later is a version of the /vN module path, not of this
 # one, so it neither sets the number nor blocks releases.
@@ -737,6 +749,58 @@ git tag mod/v2.0.0
 git checkout -q "$trunk"
 commit "fix: y"
 expect "a stray tag of another major's module path is ignored" mod/v0.3.1
+
+# ...and the major filter comes before the stale check.
+repo c27b mod/v0.3.0
+trunk=$(git symbolic-ref --short HEAD)
+commit "fix: a"
+head=$(git rev-parse HEAD)
+commit "fix: b"
+git tag mod/v2.0.0
+git checkout -q "$head"
+MAINLINE_REF="$trunk" expect "a later tag of another major's path does not make a run stale" mod/v0.3.1
+
+# A stray of this path's own major is counted.
+repo c28 mod/v2.1.0
+mkdir -p mod; echo "module example.com/mod/v2" > mod/go.mod; git add mod/go.mod
+commit "fix: path"
+git tag -d mod/v2.1.0 >/dev/null; git tag mod/v2.1.0
+trunk=$(git symbolic-ref --short HEAD)
+git checkout -q -b stray
+commit "fix: stray"
+git tag mod/v2.5.0
+git checkout -q "$trunk"
+commit "fix: y"
+expect "a stray of the path's own major is skipped past" mod/v2.5.1
+
+# A stray before the first release still sets the floor for the number.
+repo c29
+trunk=$(git symbolic-ref --short HEAD)
+git checkout -q -b stray
+commit "fix: stray"
+git tag mod/v0.4.0
+git checkout -q "$trunk"
+commit "fix: first"
+expect "a first release goes past a stray tag" mod/v0.4.1
+total=$((total + 1))
+stderr=$("$script" mod 2>&1 >/dev/null) || true
+if grep -q "Bumping mod/v0.4.0 (newest mod tag; changes counted from mod/v0.0.0)" <<< "$stderr"; then
+  printf 'ok   %s\n' "and the log names the stray it bumped from"
+else
+  printf 'FAIL %s\n       stderr %s\n' "and the log names the stray it bumped from" "$stderr"
+  failures=$((failures + 1))
+fi
+
+# A plain first release logs no stray.
+repo c30; commit "fix: first"
+total=$((total + 1))
+stderr=$("$script" mod 2>&1 >/dev/null) || true
+if grep -qx "Bumping mod/v0.0.0 -> mod/v0.1.0 (patch)" <<< "$stderr"; then
+  printf 'ok   %s\n' "a first release logs no stray tag"
+else
+  printf 'FAIL %s\n       stderr %s\n' "a first release logs no stray tag" "$stderr"
+  failures=$((failures + 1))
+fi
 
 # ----------------------------------------------------------------------------
 cd /
