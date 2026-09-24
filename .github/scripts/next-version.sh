@@ -48,28 +48,42 @@ if [[ ! "$module" =~ ^[a-z0-9_-]+$ ]]; then
 fi
 path="${module}/"
 
-# Read the tag list into a variable rather than piping to head: with
-# `pipefail`, git being SIGPIPE'd once the list outgrows the pipe
-# buffer would fail the step. Only tags reachable from HEAD count: one pushed
-# by hand on a commit outside the mainline would make the range and the
-# unchanged-tree check start from the wrong place.
-tags=$(git tag --sort=-v:refname --merged HEAD --list "${module}/v[0-9]*.[0-9]*.[0-9]*")
+# newest_stable LIST - print the newest tag in LIST (sorted newest first)
+# that is exactly MODULE/vMAJOR.MINOR.PATCH; the tag glob still admits things
+# like MODULE/v1.2.3-rc1.
+newest_stable() {
+  local candidate
+  while IFS= read -r candidate; do
+    if [[ "$candidate" =~ ^${module}/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      echo "$candidate"
+      return
+    fi
+  done <<< "$1"
+}
 
-# Take the newest tag that is exactly MODULE/vMAJOR.MINOR.PATCH; the glob
-# above still admits things like MODULE/v1.2.3-rc1.
-tag=""
+# Tag lists are read into variables rather than piped to head: with
+# `pipefail`, git being SIGPIPE'd once a list outgrows the pipe buffer would
+# fail the step.
+#
+# The base - where the range, the unchanged-tree check and the release notes
+# start - is the newest tag reachable from HEAD: a tag pushed by hand on a
+# commit outside the mainline would start them from the wrong place. The
+# version number, though, goes past the newest tag anywhere: a stray tag still
+# owns its version on the module proxy, so reusing its name would collide and
+# a lower version would never be @latest.
+glob="${module}/v[0-9]*.[0-9]*.[0-9]*"
+reachable=$(git tag --sort=-v:refname --merged HEAD --list "$glob")
+every=$(git tag --sort=-v:refname --list "$glob")
+tag=$(newest_stable "$reachable")
+top=$(newest_stable "$every")
 major=0
 minor=0
 patch=0
-while IFS= read -r candidate; do
-  if [[ "$candidate" =~ ^${module}/v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-    tag="$candidate"
-    major="${BASH_REMATCH[1]}"
-    minor="${BASH_REMATCH[2]}"
-    patch="${BASH_REMATCH[3]}"
-    break
-  fi
-done <<< "$tags"
+if [[ "$top" =~ ^${module}/v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+  major="${BASH_REMATCH[1]}"
+  minor="${BASH_REMATCH[2]}"
+  patch="${BASH_REMATCH[3]}"
+fi
 
 if [ "$mode" = base ]; then
   echo "$tag"
@@ -336,7 +350,7 @@ if [ "$major" -ge 2 ]; then
   module_path=$(sed -nE 's/^module[[:space:]]+([^[:space:]]+).*/\1/p' "${path}go.mod" 2>/dev/null || true)
   if [[ "$module_path" != */v"$major" ]]; then
     echo "${module}/v${major} needs ${path}go.mod to declare a module path ending in /v${major} (found: '${module_path}')." >&2
-    echo "If v${major} was not intended, push the right tag by hand (git tag ${module}/vX.Y.Z && git push origin ${module}/vX.Y.Z); later runs start from it." >&2
+    echo "If v${major} was not intended, tag the current main commit by hand with the version you want (git tag ${module}/vX.Y.Z origin/main && git push origin ${module}/vX.Y.Z); later runs start from it. A tag on a commit that is not on main is ignored as a base." >&2
     exit 1
   fi
 fi

@@ -64,19 +64,24 @@ jobs:
       matrix:
         module: [pubsub, redis, storage]
     steps:
+      # No git push happens here - gh uses GH_TOKEN - so the token is not
+      # stored in the git config.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       # The level comes from Release-As trailers and conventional-commit
       # markers on the changes that touched this module; see
       # .github/scripts/next-version.sh and its test for the rules.
       - name: Determine next version
         id: version
+        env:
+          MODULE: ${{ matrix.module }}
         run: |
           set -euo pipefail
-          base=$(.github/scripts/next-version.sh --base "${{ matrix.module }}")
-          next=$(.github/scripts/next-version.sh "${{ matrix.module }}")
+          base=$(.github/scripts/next-version.sh --base "$MODULE")
+          next=$(.github/scripts/next-version.sh "$MODULE")
           echo "base=${base}" >> "$GITHUB_OUTPUT"
           if [ "$next" = "skip" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"

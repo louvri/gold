@@ -685,17 +685,29 @@ expect_base "base is the newest stable tag of the module" mod/v0.0.5
 repo z2 other/v1.0.0
 expect_base "base is empty before the first release" ""
 
-# Only tags reachable from HEAD are a base: a higher tag pushed by hand on a
-# commit outside the mainline must not become the range's start.
+# A tag pushed by hand on a commit outside the mainline is not a base - the
+# range and the notes start from the newest reachable tag - but it still owns
+# its version on the module proxy, so the next version goes past it: reusing
+# its name would collide, and a lower one would never be @latest.
 repo c24 mod/v0.2.3
 trunk=$(git symbolic-ref --short HEAD)
 git checkout -q -b stray
 commit "fix: stray"
-git tag mod/v9.0.0
+git tag mod/v0.5.0
 git checkout -q "$trunk"
 commit "fix: y"
-expect "a tag not reachable from HEAD is not the base" mod/v0.2.4
-expect_base "and --base skips it too" mod/v0.2.3
+expect "a stray tag's version is skipped past, not reused or undercut" mod/v0.5.1
+expect_base "and --base is the newest reachable tag" mod/v0.2.3
+
+# A git error fails the step rather than counting as a change or no change.
+mkdir -p "$workdir/badgit"
+realgit=$(command -v git)
+# The shim's own $1, $2 and $@ must stay literal for the shim to expand.
+# shellcheck disable=SC2016
+printf '#!/bin/sh\ncase "$1 $2" in "diff --quiet") echo "git diff exploded" >&2; exit 128;; esac\nexec "%s" "$@"\n' "$realgit" > "$workdir/badgit/git"
+chmod +x "$workdir/badgit/git"
+repo c25 mod/v0.2.3; commit "fix: x"
+PATH="$workdir/badgit:$PATH" expect "a failing git diff fails the step" "<script failed>"
 
 # ----------------------------------------------------------------------------
 cd /
