@@ -43,6 +43,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # actions/checkout resets refs/remotes/origin/main to this run's own
+      # commit when main has moved on - exactly a stale re-run - so the stale
+      # check reads main's real tip from a ref of its own.
+      - name: Fetch the mainline tip
+        run: git fetch --no-tags --quiet origin +refs/heads/main:refs/mainline/main
+
       # The level comes from Release-As trailers and conventional-commit
       # markers on the changes that touched this module; see
       # .github/scripts/next-version.sh and its test for the rules.
@@ -50,7 +56,7 @@ jobs:
         id: version
         env:
           MODULE: ${{ matrix.module }}
-          MAINLINE_REF: origin/main
+          MAINLINE_REF: refs/mainline/main
         run: |
           set -euo pipefail
           next=$(.github/scripts/next-version.sh "$MODULE")
@@ -105,11 +111,17 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # actions/checkout resets refs/remotes/origin/main to this run's own
+      # commit when main has moved on - exactly a stale re-run - so the stale
+      # check reads main's real tip from a ref of its own.
+      - name: Fetch the mainline tip
+        run: git fetch --no-tags --quiet origin +refs/heads/main:refs/mainline/main
+
       - name: Determine next version
         id: version
         env:
           MODULE: ${{ matrix.module }}
-          MAINLINE_REF: origin/main
+          MAINLINE_REF: refs/mainline/main
         run: |
           set -euo pipefail
           base=$(.github/scripts/next-version.sh --base "$MODULE")
